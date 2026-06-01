@@ -188,9 +188,9 @@ Explica las mecánicas principales de tu juego.
 
 ### 👥 Equipo
 
-- **Líder**: Nombre Completo (@usuario-github)
-- **Integrante 2**: Nombre Completo (@usuario-github)
-- **Integrante 3**: Nombre Completo (@usuario-github)
+- **Integrantes**: 
+Arturo Maximiliano Salazar Sanchez (@MaxSalazar35)
+Dafne Jackeline Reynoso Sauceda (@dafners)
 
 ### 🛠️ Tecnologías
 
