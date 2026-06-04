@@ -1,0 +1,23 @@
+# Compilados
+*.o
+*.exe
+*.out
+*.d
+
+# Directorios de build
+obj/
+bin/
+
+# Editor
+.vscode/
+*.code-workspace
+
+# Sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporales
+*.tmp
+*.log
+*~

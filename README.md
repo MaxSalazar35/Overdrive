@@ -1,207 +1,205 @@
 # Overdrive
 
-# PlantillaProyecto
+Juego de plataformas multijugador de velocidad para 2 jugadores, inspirado en SpeedRunners. Desarrollado en **C++ con SFML y Box2D**, compilado con **MinGW64 (MSYS2)** en Visual Studio Code.
 
-Este es el template oficial para los proyectos de la materia Proyecto 252. Sigue las instrucciones para configurar tu proyecto y sincronizarlo automáticamente con la galería de CETUS.
+Corre, usa el gancho, deja atrás a tu rival y que no te quede fuera de la pantalla.
 
-## 📋 Estructura Requerida 
+---
 
-Tu repositorio debe seguir esta estructura exacta:
+## 🛠️ Prerequisitos
+
+- [Herramientas (VSCode, MSYS2, Git)](./docs/herramientas.md)
+- [Extensiones de VSCode](./docs/extensiones.md)
+- [Librerías SFML + Box2D](./docs/librerias.md)
+- [Clonar el repositorio](./docs/fork.md)
+
+---
+
+## 🗂️ Estructura del Proyecto
 
 ```
-proyecto-252/
-├── .github/
-│   └── workflows/
-│       └── publish.yml          ← GitHub Action (ya incluido)
-│
-├── video/
-│   └── demo.mp4                 ← Video de gameplay (max 2 min)
-│
-├── gallery/
-│   └── cover.png                ← Imagen de portada (720x1080)
-│
-├── screenshots/
-│   ├── screenshot1.png          ← Capturas del juego (mínimo 3)
-│   ├── screenshot2.png
-│   └── screenshot3.png
-│
-├── bin/
-│   └── JuegoProyecto.exe        ← Ejecutable del juego
-│
+Overdrive/
+├── .github/workflows/publish.yml   ← CI/CD para CETUS
+├── src/
+│   ├── main.cpp        ← Game loop principal
+│   ├── Jugador.cpp     ← Física, animaciones, entrada
+│   ├── Gancho.cpp      ← Grappling hook con raycast
+│   ├── Camara.cpp      ← Cámara dinámica
+│   ├── Mapa.cpp        ← Nivel, plataformas, parallax
+│   └── HUD.cpp         ← UI, velocímetro, victoria
+├── include/
+│   ├── Constantes.hpp  ← Todos los valores del juego
+│   ├── Animacion.hpp   ← Componente de animación por spritesheet
+│   ├── Input.hpp       ← Teclado + gamepad unificados
+│   ├── Particulas.hpp  ← Sistema de partículas
+│   ├── Jugador.hpp
+│   ├── Gancho.hpp
+│   ├── Camara.hpp
+│   ├── Mapa.hpp
+│   └── HUD.hpp
 ├── assets/
-│   ├── textures/
-│   ├── sounds/
-│   └── ...                      ← Todos los recursos necesarios
-│
-├── README.md                    ← Este archivo (edítalo con tu proyecto)
-└── .gitignore
+│   ├── images/
+│   │   ├── jugador1.png      ← Spritesheet J1 (768×512, fondo transparente)
+│   │   ├── jugador2.png      ← Spritesheet J2 (768×512, fondo transparente)
+│   │   ├── bg_layer1.png     ← Fondo parallax — capa lejana
+│   │   ├── bg_layer2.png     ← Fondo parallax — capa media
+│   │   └── bg_layer3.png     ← Fondo parallax — primer plano
+│   ├── music/
+│   │   └── musica.ogg
+│   └── fonts/
+│       └── fuente.ttf
+├── bin/                   ← Ejecutable generado (ignorado por git)
+├── obj/                   ← Objetos compilados (ignorado por git)
+├── gallery/cover.png
+├── screenshots/
+├── video/demo.mp4
+└── makefile
 ```
 
-## 🚀 Cómo Usar Este Template
+---
 
-### 1. Haz Fork de Este Repositorio
+## 🚀 Compilar y Ejecutar
 
-Copia los archivos que te hagan falta o haz fork de este repositorio a tu cuenta de GitHub.
+Abre una terminal **MSYS2 MINGW64** dentro de VSCode y ejecuta:
 
-### 2. Configura en CETUS
+```bash
+# Compilar todo
+make all
 
-1. Ve a [CETUS](https://cetus.logiasimbolica.com)
-2. Inicia sesión con tu cuenta
-3. Ve a **Proyectos** y entra a tu proyecto
-4. En la sección "Repositorio de GitHub", haz clic en **Configurar**
-5. Pega la URL de tu repositorio (por ejemplo: `https://github.com/tu-usuario/mijuego`)
-6. Guarda la configuración
+# Compilar y ejecutar
+make run
 
-### 3. Organiza Tus Archivos
-
-Coloca tus archivos en las carpetas correspondientes siguiendo la estructura de arriba.
-
-**Requisitos importantes:**
-
-#### Video (`video/demo.mp4`)
-
-- Duración máxima: **2 minutos**
-- Formato: MP4
-- Contenido: Gameplay mostrando las características principales de tu juego
-- Resolución recomendada: 1280x720 o superior
-
-#### Portada (`gallery/cover.png`)
-
-- Dimensiones: **720x1080 pixels** (vertical)
-- Formato: PNG
-- Representa visualmente tu juego (puede ser logo + screenshot)
-
-#### Screenshots (`screenshots/*.png`)
-
-- Mínimo: **3 capturas**
-- Dimensiones: **1080x720 pixels** cada una
-- Formato: PNG
-- Muestra diferentes aspectos del juego
-
-#### Ejecutable (`bin/*.exe`)
-
-- Incluye el `.exe` principal de tu juego
-- Si necesitas DLLs adicionales, inclúyelas también
-
-#### Assets (`assets/`)
-
-- Todos los recursos que tu juego necesita para funcionar
-- Texturas, sonidos, música, modelos 3D, etc.
-- Organiza en subcarpetas
-
-#### README.md
-
-- Edita este archivo con la descripción de tu proyecto
-- Incluye: objetivo, controles, mecánicas, créditos
-
-### 4. Publica Tu Proyecto
-
-Cada vez que hagas **push a la rama `main`**, el GitHub Action se ejecutará automáticamente y:
-
-1. ✅ Empaquetará tu ejecutable y assets en un ZIP
-2. ✅ Creará un Release con versión automática
-3. ✅ Notificará a CETUS para actualizar la galería
-4. ✅ Tu proyecto aparecerá en https://cetus.logiasimbolica.com/galeria
-
-**No necesitas hacer nada más** - la sincronización es automática.
-
-## 🔄 Flujo de Trabajo
-
-```
-1. Desarrollas tu juego localmente
-2. Actualizas archivos en las carpetas correspondientes
-3. git add . && git commit -m "Actualización X"
-4. git push origin main
-5. GitHub Action se ejecuta automáticamente
-6. ✨ Tu proyecto se actualiza en la galería
+# Limpiar
+make clean
 ```
 
-## ⚠️ Validaciones
+> ⚠️ La terminal debe ser **MSYS2 MINGW64**, no PowerShell ni CMD.
 
-El sistema validará automáticamente:
+---
 
-- ✓ Repositorio configurado en CETUS
-- ✓ Estructura de carpetas correcta
-- ✓ Video existe y es accesible
-- ✓ Portada existe (cover.png)
-- ✓ Mínimo 3 screenshots
-- ✓ Ejecutable existe
-- ✓ README.md presente
+## 🎮 Descripción del Juego
 
-Si algo falla, recibirás un error en el log del GitHub Action.
+### 🎯 Objetivo
 
-## 📊 Tracking de Progreso
+Todos los jugadores corren por el mismo nivel en circuito. La cámara sigue al que va al frente — si quedas fuera del borde izquierdo, eres **eliminado**. El primero en ganar **3 rondas** gana el juego.
 
-Cada commit que hagas se registrará en CETUS para evaluar:
+---
 
-- Frecuencia de commits
-- Progreso a lo largo del tiempo
-- Contribuciones de cada integrante
+### 🕹️ Controles
 
-Asegúrate de hacer commits significativos con mensajes descriptivos.
+#### Teclado
 
-## 🆘 Problemas Comunes
+| Acción | Jugador 1 | Jugador 2 |
+|--------|-----------|-----------|
+| Moverse | `A` / `D` | `←` / `→` |
+| Saltar | `W` | `↑` |
+| Deslizarse | `S` | `↓` |
+| Gancho | `LShift` | `RShift` |
 
-### El Action falla
+#### Gamepad (Xbox / PlayStation)
 
-- Verifica que todas las carpetas existan
-- Revisa que los archivos tengan los nombres exactos
-- Asegúrate de que el repo sea público
+| Acción | Botón |
+|--------|-------|
+| Moverse | Stick izquierdo |
+| Saltar | `A` / Cruz |
+| Deslizarse | `B` / Círculo |
+| Gancho | `LB` / `RB` / L1 / R1 |
+| Pausa | `Start` / `Options` |
 
-### No aparece en la galería
+El juego detecta automáticamente si hay gamepad conectado y le da prioridad sobre teclado.
 
-- Confirma que registraste la URL en CETUS
-- Verifica que el push fue a la rama `main`
-- Revisa los logs del Action en GitHub
-
-### El ejecutable no se descarga
-
-- Asegúrate de que el Release se creó exitosamente
-- Verifica que el ZIP contiene bin/ y assets/
-
-## 📝 Descripción del Proyecto
-
-**[Edita esta sección con la información de tu juego]**
-
-### 🎯 Objetivo del Juego
-
-Describe aquí el objetivo principal de tu juego.
-
-### 🎮 Controles
-
-Lista los controles:
-
-- W/A/S/D: Movimiento
-- Space: Saltar
-- Mouse: Apuntar/Disparar
-- etc.
+---
 
 ### ⚙️ Mecánicas
 
-Explica las mecánicas principales de tu juego.
+**🪝 Grappling Hook**
+El gancho usa raycast instantáneo (no hay bug de "atravesar paredes"). Se dispara en la dirección que miras, con un ángulo de 30° hacia arriba. Al anclarse, una cuerda elástica te jala progresivamente. Presiona el botón de gancho de nuevo para soltarlo.
+
+**💨 Sistema de velocidad y aceleración**
+La aceleración es continua mientras corres. Hay poca fricción en el aire para mantener el momentum. Las rampas tienen fricción casi nula para impulsar al jugador.
+
+**🎥 Cámara dinámica**
+La cámara sigue al líder con interpolación suave. El jugador que queda 80px fuera del borde izquierdo es eliminado automáticamente.
+
+**📦 Cajas de items**
+Distribuidas por el nivel, flotan y rotan. Al recogerlas otorgan un power-up (en desarrollo).
+
+**✨ Partículas**
+- Polvo al correr y aterrizar
+- Chispas al anclar el gancho
+- Estela de velocidad a alta velocidad
+- Confetti al ganar una ronda
+
+---
 
 ### 🏆 Características
 
-- Feature 1
-- Feature 2
-- Feature 3
+- Multijugador local 2 jugadores (teclado compartido o gamepad)
+- Soporte nativo para Xbox y PlayStation (SFML Joystick API)
+- Física con Box2D — gravedad, fricción, joints de cuerda
+- Gancho con raycast (sin bugs de tunelado)
+- Animaciones por spritesheet: idle, correr, saltar, deslizar
+- Fondo con efecto parallax de 3 capas
+- Sistema de partículas procedural
+- HUD con velocímetro, indicador de gancho y contador de rondas
+- Pantalla de victoria animada con pop y confetti
+- Sistema de rondas (primero en 3 gana el juego)
+- Coyote time en el salto (más justo y fluido)
+
+---
 
 ### 👥 Equipo
 
-- **Integrantes**: 
-Arturo Maximiliano Salazar Sanchez (@MaxSalazar35)
+ **Integrantes**: 
+Arturo Maximiliano Salazar Sanchez (@MaxSalazar35) 
 Dafne Jackeline Reynoso Sauceda (@dafners)
+
+---
 
 ### 🛠️ Tecnologías
 
-- Motor/Framework: Unity/Godot/Unreal/etc.
-- Lenguaje: C#/C++/Python/etc.
-- Librerías adicionales: ...
+| Herramienta | Versión | Uso |
+|------------|---------|-----|
+| C++ | 17 | Lenguaje principal |
+| SFML | 2.x | Gráficos, audio, ventana, joystick |
+| Box2D | 2.x | Motor de física 2D |
+| MinGW64 / MSYS2 | — | Compilador en Windows |
+| Visual Studio Code | — | Editor |
+| Make | — | Build system |
+
+---
 
 ### 📜 Créditos
 
-- Assets de terceros utilizados
-- Referencias o inspiraciones
-- Agradecimientos
+- Inspirado en **SpeedRunners** de tinyBuild (mecánicas originales, arte y código propios)
+- Música: [mureka.ai]
+- Fuentes: [dafont.com](https://www.dafont.com/es/)
+- Motor de física: [Box2D](https://box2d.org/)
+- Gráficos/Audio: [SFML](https://www.sfml-dev.org/)
 
 ---
+
+## ⚠️ Errores comunes
+
+**No compila — "undefined reference"**
+→ Verifica que la terminal sea MSYS2 MINGW64 y que SFML + Box2D estén instalados con `pacman`.
+
+**Los sprites no aparecen**
+→ Coloca los archivos PNG en `assets/images/` con los nombres exactos del README. El juego funciona sin ellos (muestra hitboxes de color) pero sin sprites.
+
+**El gamepad no responde**
+→ Conecta el control **antes** de iniciar el juego. SFML detecta joysticks al inicio.
+
+**La música no suena**
+→ Coloca un archivo `.ogg` en `assets/music/musica.ogg`. MP3 no es soportado por SFML.
+
+---
+
+## 🔄 Flujo de trabajo (CETUS)
+
+```bash
+git add .
+git commit -m "feat: descripción del cambio"
+git push origin main
+# → GitHub Action publica automáticamente en CETUS
+```

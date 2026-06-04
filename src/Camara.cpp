@@ -1,5 +1,7 @@
 // ============================================================
 // Camara.cpp — Overdrive
+// Sin límite derecho (mapa infinito). El límite izquierdo
+// sigue siendo x = mitad de pantalla (no se puede retroceder).
 // ============================================================
 #include "Camara.hpp"
 #include <algorithm>
@@ -19,17 +21,14 @@ void Camara::update(const std::vector<sf::Vector2f>& posiciones, float dt)
     int   lider = idLider(posiciones);
     float xL    = posiciones[lider].x;
 
-    // El líder queda en el CAM_OFFSET_X (20%) de la pantalla
-    float xMeta = xL + ANCHO_VENTANA * (0.5f - CAM_OFFSET_X);
-
-    // Lerp suavizado
+    float xMeta   = xL + ANCHO_VENTANA * (0.5f - CAM_OFFSET_X);
     float xActual = vista.getCenter().x;
     float xNueva  = xActual + (xMeta - xActual) * CAM_VELOCIDAD * dt;
 
-    // Clamp a los bordes del mundo
+    // Solo clamp izquierdo — derecho es infinito
     float mitad = ANCHO_VENTANA / 2.f;
     xNueva = std::max(xNueva, mitad);
-    xNueva = std::min(xNueva, anchoMundo - mitad);
+    // Sin clamp derecho: el mapa se genera infinitamente
 
     vista.setCenter(xNueva, altoMundo / 2.f);
 }
@@ -43,14 +42,13 @@ void Camara::restaurarVista(sf::RenderWindow& ventana) {
 }
 
 bool Camara::fueraDePantalla(sf::Vector2f pos) const {
-    float bordeIzq  = vista.getCenter().x - ANCHO_VENTANA / 2.f;
+    float bordeIzq   = vista.getCenter().x - ANCHO_VENTANA / 2.f;
     float bordeArriba = vista.getCenter().y - ALTO_VENTANA / 2.f;
     float bordeAbajo  = vista.getCenter().y + ALTO_VENTANA / 2.f;
 
-    // Eliminado si sale por la izquierda, por arriba o por abajo
-    bool fueraIzq   = pos.x < bordeIzq - CAM_MARGEN_ELIM;
-    bool fueraArriba= pos.y < bordeArriba - 200.f;  // margen generoso arriba
-    bool fueraAbajo = pos.y > bordeAbajo  + 100.f;  // cayo al vacio
+    bool fueraIzq    = pos.x < bordeIzq   - CAM_MARGEN_ELIM;
+    bool fueraArriba = pos.y < bordeArriba - 200.f;
+    bool fueraAbajo  = pos.y > bordeAbajo  + 100.f;
     return fueraIzq || fueraArriba || fueraAbajo;
 }
 

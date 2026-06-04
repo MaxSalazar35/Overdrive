@@ -1,66 +1,81 @@
 // ============================================================
 // Jugador.cpp — Overdrive
-// Simple y directo. Fisica manual sobre Box2D v3.
+// Salto estilo Mario: fuerza sostenida mientras se presiona,
+// con límite de tiempo. Cooldown de 1.5s entre saltos.
+// Desliz: dura mientras el botón esté presionado y haya velocidad.
+//
+// Animaciones fluidas:
+//  - Salto:   frames 0..3 durante la subida, se congela en frame 3 al caer.
+//             Al aterrizar vuelve a idle/correr suavemente.
+//  - Desliz:  animación loop mientras se desliza. Al soltar, congela el
+//             último frame DURACION_SALIDA_DESLIZ seg antes de transicionar.
+//  - Correr:  loop estándar; al empezar a correr no hace "pop" porque
+//             setEstado solo reinicia si cambia de estado.
 // ============================================================
 #include "Jugador.hpp"
 #include <cmath>
 #include <iostream>
 
-// Spritesheet: 1200x880, celdas 200x220
-// Fila 0 = idle (4f), Fila 1 = correr (6f)
-// Fila 2 = saltar (4f), Fila 3 = deslizar (2f)
 static const int FW = 200;
 static const int FH = 220;
 
-// Velocidades
-static const float VEL_MAX    = 400.f;
-static const float ACELERACION= 220.f;  // px/s por frame
-static const float FRICCION   = 0.80f;  // factor por frame en suelo
-static const float FRIC_AIRE  = 0.92f;
-static const float IMPULSO_SALTO = -700.f;  // calibrado para gravedad 2450 (~100px de altura)
+// ── Movimiento horizontal ─────────────────────────────────────
+static const float VEL_MAX     = 400.f;
+static const float ACELERACION = 220.f;
+static const float FRICCION    = 0.80f;
+static const float FRIC_AIRE   = 0.92f;
+
+// ── Salto estilo Mario ────────────────────────────────────────
+static const float SALTO_VEL        = -400.f;
+static const float SALTO_TIEMPO_MAX =  0.50f;
+static const float SALTO_COOLDOWN   =  1.5f;
+
+// ── Desliz ────────────────────────────────────────────────────
+static const float DESLIZ_FRICCION  = 0.03f;
+static const float DESLIZ_VEL_MIN   = 10.f;
 
 Jugador::Jugador(b2WorldId worldId, sf::Vector2f pos,
                  int id, SistemaParticulas& parts)
-    : id(id), estado(EstadoJug::Cayendo),
+    : id(id), estado(EstadoJug::Cayendo), estadoAnterior(EstadoJug::Cayendo),
       enSuelo(false), mirandoDerecha(true),
-      tiempoSinSuelo(0.f), saltoPresionado(false), ganchoPresionado(false),
+      tiempoSinSuelo(0.f), ganchoPresionado(false),
+      deslizPresionado(false), timerDesliz(0.f),
+      timerSalidaDesliz(0.f),
+      animCaidaCongelada(false),
+      saltando(false), puedesSaltar(false),
+      timerSalto(0.f), cooldownSalto(0.f),
+      deslizBoostAplicado(false),
       worldId(worldId), input(id), particulas(parts)
 {
-    // ── Animacion ────────────────────────────────────────────
     anim.configurar(FW, FH);
     anim.agregarEstado(ANIM_IDLE,     {0, 4, 0.18f, true});
     anim.agregarEstado(ANIM_CORRER,   {1, 6, 0.09f, true});
-    anim.agregarEstado(ANIM_SALTAR,   {2, 4, 0.12f, false});
+    anim.agregarEstado(ANIM_SALTAR,   {2, 4, 0.12f, false}); // loop=false: avanza y para
     anim.agregarEstado(ANIM_DESLIZAR, {3, 2, 0.15f, true});
 
-    // ── Sprite ───────────────────────────────────────────────
     std::string ruta = (id == 0) ? "assets/images/jugador1.png"
                                  : "assets/images/jugador2.png";
     if (!textura.loadFromFile(ruta))
         std::cerr << "[Jugador] No se cargo " << ruta << "\n";
 
     sprite.setTexture(textura);
-    // El personaje dentro de la celda mide ~120x180 px
-    // Queremos que se vea ~90x130 en pantalla
     sprite.setScale(0.45f, 0.45f);
     sprite.setOrigin(FW / 2.f, FH / 2.f);
 
-    // ── Cuerpo Box2D ─────────────────────────────────────────
-    b2BodyDef bd    = b2DefaultBodyDef();
-    bd.type         = b2_dynamicBody;
-    bd.position     = {pos.x, pos.y};
-    bd.fixedRotation= true;
-    bd.linearDamping= 0.f;
+    b2BodyDef bd     = b2DefaultBodyDef();
+    bd.type          = b2_dynamicBody;
+    bd.position      = {pos.x, pos.y};
+    bd.fixedRotation = true;
+    bd.linearDamping = 0.f;
     cuerpo = b2CreateBody(worldId, &bd);
 
-    b2Polygon box  = b2MakeBox(20.f, 35.f);   // hitbox 40x70 px
+    b2Polygon box  = b2MakeBox(20.f, 35.f);
     b2ShapeDef sd  = b2DefaultShapeDef();
     sd.density     = 1.f;
-    sd.friction    = 0.f;                      // sin friccion lateral
+    sd.friction    = 0.f;
     sd.restitution = 0.f;
     b2CreatePolygonShape(cuerpo, &sd, &box);
 
-    // ── Gancho ───────────────────────────────────────────────
     gancho = new Gancho(worldId, cuerpo);
 }
 
@@ -71,12 +86,12 @@ Jugador::~Jugador()
         b2DestroyBody(cuerpo);
 }
 
-// ── Deteccion de suelo (raycast 10px hacia abajo) ──────────
+// ── Detección de suelo ───────────────────────────────────────
 static bool detectarSuelo(b2WorldId worldId, b2BodyId cuerpo)
 {
     b2Vec2 pos = b2Body_GetPosition(cuerpo);
-    b2Vec2 ori = {pos.x, pos.y + 33.f};   // un poco antes del borde inferior
-    b2Vec2 fin = {pos.x, pos.y + 43.f};   // 10px mas abajo
+    b2Vec2 ori = {pos.x, pos.y + 33.f};
+    b2Vec2 fin = {pos.x, pos.y + 43.f};
 
     struct Ctx { bool toca = false; };
     Ctx ctx;
@@ -92,52 +107,136 @@ static bool detectarSuelo(b2WorldId worldId, b2BodyId cuerpo)
     return ctx.toca;
 }
 
-// ── Entrada ────────────────────────────────────────────────
+// ── Entrada ─────────────────────────────────────────────────
 void Jugador::procesarEntrada(float dt)
 {
     if (estado == EstadoJug::Muerto) return;
     input.update();
 
-    // Leer velocidad actual de Box2D
-    b2Vec2 vel = b2Body_GetLinearVelocity(cuerpo);
+    bool botonDesliz = input.presionado(Accion::Deslizar);
 
-    // ── Horizontal: solo modificamos X ───────────────────────
-    float eje = input.ejeX();
-    if (eje > 0.1f) {
-        vel.x += ACELERACION * dt;
-        if (vel.x > VEL_MAX) vel.x = VEL_MAX;
-        mirandoDerecha = true;
-    } else if (eje < -0.1f) {
-        vel.x -= ACELERACION * dt;
-        if (vel.x < -VEL_MAX) vel.x = -VEL_MAX;
-        mirandoDerecha = false;
-    } else {
-        vel.x *= enSuelo ? FRICCION : FRIC_AIRE;
-        if (std::abs(vel.x) < 5.f) vel.x = 0.f;
+    // ── Deslizamiento activo ──────────────────────────────────
+    if (timerDesliz > 0.f) {
+        b2Vec2 va  = b2Body_GetLinearVelocity(cuerpo);
+        float velX = va.x * (1.f - DESLIZ_FRICCION * dt * 60.f);
+        if (std::abs(velX) < 5.f) velX = 0.f;
+        b2Body_SetLinearVelocity(cuerpo, {velX, va.y});
+
+        if (!botonDesliz || !enSuelo) {
+            // Solto el boton o salio del suelo: iniciar salida animada
+            timerDesliz       = 0.f;
+            timerSalidaDesliz = DURACION_SALIDA_DESLIZ;
+        }
+
+        ganchoPresionado = true;
+        deslizPresionado = botonDesliz;
+        return;
     }
 
-    // ── Salto ────────────────────────────────────────────────
-    // IMPORTANTE: usamos un bool de NIVEL para el salto,
-    // no la tecla directamente, para que solo salte UNA VEZ
-    // por pulsación (edge trigger, no level trigger)
-    bool botonSaltoAhora = input.presionado(Accion::Saltar);
-    bool saltarEsteFrame = botonSaltoAhora && !saltoPresionado && enSuelo;
-    saltoPresionado = botonSaltoAhora;
+    // ── Horizontal ───────────────────────────────────────────
+    float velX = b2Body_GetLinearVelocity(cuerpo).x;
+    float eje  = input.ejeX();
 
-    if (saltarEsteFrame) {
-        vel.y = IMPULSO_SALTO;
-        particulas.emitir(getPosicion() + sf::Vector2f(0,35.f),
+    if (eje > 0.1f) {
+        velX += ACELERACION * dt;
+        if (velX >  VEL_MAX) velX =  VEL_MAX;
+        mirandoDerecha = true;
+    } else if (eje < -0.1f) {
+        velX -= ACELERACION * dt;
+        if (velX < -VEL_MAX) velX = -VEL_MAX;
+        mirandoDerecha = false;
+    } else {
+        velX *= enSuelo ? FRICCION : FRIC_AIRE;
+        if (std::abs(velX) < 5.f) velX = 0.f;
+    }
+
+    // ── Salto estilo Mario ────────────────────────────────────
+    bool botonSalto = input.presionado(Accion::Saltar);
+
+    if (botonSalto && !saltando && enSuelo && puedesSaltar && cooldownSalto <= 0.f) {
+        saltando              = true;
+        timerSalto            = SALTO_TIEMPO_MAX;
+        puedesSaltar          = false;
+        animCaidaCongelada    = false;  // reiniciar flag para esta nueva subida
+        particulas.emitir(getPosicion() + sf::Vector2f(0, 35.f),
                           TipoParticula::Polvo, sf::Color::White, 8);
     }
 
-    // UN SOLO SetLinearVelocity con X e Y ya calculados
-    b2Body_SetLinearVelocity(cuerpo, {vel.x, vel.y});
+    if (!botonSalto && saltando) {
+        saltando      = false;
+        timerSalto    = 0.f;
+        cooldownSalto = SALTO_COOLDOWN;
+    }
 
-    // ── Gancho ────────────────────────────────────────────────
+    if (saltando && timerSalto > 0.f) {
+        timerSalto -= dt;
+        if (timerSalto <= 0.f) {
+            timerSalto    = 0.f;
+            saltando      = false;
+            cooldownSalto = SALTO_COOLDOWN;
+        } else {
+            b2Body_SetLinearVelocity(cuerpo, {velX, SALTO_VEL});
+            goto salto_gancho;
+        }
+    }
+
+    // Solo X — Y la maneja Box2D
+    {
+        b2Vec2 va = b2Body_GetLinearVelocity(cuerpo);
+        b2Body_SetLinearVelocity(cuerpo, {velX, va.y});
+    }
+
+    // ── Deslizamiento (activar) ───────────────────────────────
+    {
+        bool iniciarDesliz = botonDesliz && !deslizPresionado
+                             && enSuelo
+                             && std::abs(velX) > DESLIZ_VEL_MIN;
+        deslizPresionado = botonDesliz;
+        if (iniciarDesliz) {
+            timerDesliz         = 99.f;
+            timerSalidaDesliz   = 0.f;
+            deslizBoostAplicado = false;   // resetear para esta nueva deslizada
+            particulas.emitir(getPosicion() + sf::Vector2f(0, 35.f),
+                              TipoParticula::Polvo, sf::Color::White, 12);
+        }
+    }
+
+    // ── Boost de desliz en bajada ─────────────────────────────
+    // Si el jugador está deslizando y la plataforma "baja" (detectamos
+    // inclinación revisando si hay suelo un poco más adelante y más abajo),
+    // aplicamos un impulso extra UNA sola vez por deslizada.
+    // Como las plataformas son horizontales usamos un enfoque simple:
+    // si el jugador desliza y su velocidad Y reciente era positiva antes
+    // de tocar el suelo (venía cayendo), es "bajada". Lo simplificamos:
+    // si el jugador supera cierta velocidad X al deslizar, reforzamos.
+    if (timerDesliz > 0.f && !deslizBoostAplicado && enSuelo) {
+        b2Vec2 va = b2Body_GetLinearVelocity(cuerpo);
+        float absVel = std::abs(va.x);
+        if (absVel > 80.f) {
+            // Impulso extra: 15% de la velocidad actual en la dirección de movimiento
+            float boost = va.x * 0.15f;
+            // Cap para que no se dispare
+            float newVelX = va.x + boost;
+            float cap = 480.f;
+            if (newVelX >  cap) newVelX =  cap;
+            if (newVelX < -cap) newVelX = -cap;
+            b2Body_SetLinearVelocity(cuerpo, {newVelX, va.y});
+            deslizBoostAplicado = true;
+        }
+    }
+
+salto_gancho:
+    // ── Gancho ───────────────────────────────────────────────
     bool botonGancho = input.presionado(Accion::Gancho);
     if (botonGancho && !ganchoPresionado) {
+        // Dispara hacia arriba y adelante: -80° vertical (casi recto arriba)
+        // Si está en el aire, apunta más hacia el techo; en suelo, un poco adelante.
         constexpr float PI = 3.14159265f;
-        float ang = mirandoDerecha ? -0.4f : PI + 0.4f;
+        // Ángulo: -80° desde horizontal = casi recto arriba con ligera inclinación
+        // Ajustar según dirección del jugador
+        float angBase = -PI / 2.f;  // 90° hacia arriba
+        float inclinacion = mirandoDerecha ? 0.3f : -0.3f;  // leve sesgo adelante
+        float ang = angBase + inclinacion;
         sf::Vector2f dir(std::cos(ang), std::sin(ang));
         bool ok = gancho->disparar(dir);
         if (ok)
@@ -147,7 +246,7 @@ void Jugador::procesarEntrada(float dt)
     ganchoPresionado = botonGancho;
 }
 
-// ── Update ─────────────────────────────────────────────────
+// ── Update ───────────────────────────────────────────────────
 void Jugador::update(float dt)
 {
     if (estado == EstadoJug::Muerto) return;
@@ -155,36 +254,50 @@ void Jugador::update(float dt)
     bool teniaSuelo = enSuelo;
     enSuelo = detectarSuelo(worldId, cuerpo);
 
-    if (!enSuelo) tiempoSinSuelo += dt;
-    else          tiempoSinSuelo  = 0.f;
+    if (!enSuelo) {
+        tiempoSinSuelo += dt;
+        if (timerDesliz > 0.f) timerDesliz = 0.f;
+    } else {
+        tiempoSinSuelo = 0.f;
+        puedesSaltar   = true;
+        animCaidaCongelada = false;   // ya tocó suelo, listo para el próximo salto
+        if (!teniaSuelo)
+            particulas.emitir(getPosicion() + sf::Vector2f(0, 35.f),
+                              TipoParticula::Polvo, sf::Color::White, 10);
+    }
 
-    if (enSuelo && !teniaSuelo)   // aterrizaje
-        particulas.emitir(getPosicion() + sf::Vector2f(0,35.f),
-                          TipoParticula::Polvo, sf::Color::White, 10);
+    if (cooldownSalto > 0.f) {
+        cooldownSalto -= dt;
+        if (cooldownSalto < 0.f) cooldownSalto = 0.f;
+    }
+
+    // Timer de salida del desliz (congela el último frame)
+    if (timerSalidaDesliz > 0.f) {
+        timerSalidaDesliz -= dt;
+        if (timerSalidaDesliz < 0.f) timerSalidaDesliz = 0.f;
+    }
 
     gancho->update(dt);
     actualizarEstado();
     actualizarAnimacion();
 
-    // Estela a alta velocidad
     b2Vec2 vel = b2Body_GetLinearVelocity(cuerpo);
     if (std::abs(vel.x) > 280.f
         && relojEstela.getElapsedTime().asSeconds() > 0.05f) {
-        sf::Color c = id==0 ? sf::Color(80,180,255,140)
-                            : sf::Color(255,100,60,140);
+        sf::Color c = id == 0 ? sf::Color(80,180,255,140)
+                              : sf::Color(255,100,60,140);
         particulas.emitir(getPosicion(), TipoParticula::Estela, c, 2);
         relojEstela.restart();
     }
 }
 
-// ── Draw ───────────────────────────────────────────────────
+// ── Draw ─────────────────────────────────────────────────────
 void Jugador::draw(sf::RenderWindow& ventana)
 {
     if (estado == EstadoJug::Muerto) return;
 
-    // Cuerda del gancho
-    sf::Color cc = id==0 ? sf::Color(80,200,255,200)
-                         : sf::Color(255,100,80,200);
+    sf::Color cc = id == 0 ? sf::Color(80,200,255,200)
+                           : sf::Color(255,100,80,200);
     gancho->draw(ventana, cc);
 
     b2Vec2 pos = b2Body_GetPosition(cuerpo);
@@ -196,19 +309,18 @@ void Jugador::draw(sf::RenderWindow& ventana)
         sprite.setScale(mirandoDerecha ? sx : -sx, 0.45f);
         ventana.draw(sprite);
     } else {
-        // Placeholder si no cargo la textura
         sf::RectangleShape box({40.f, 70.f});
         box.setOrigin(20.f, 35.f);
         box.setPosition(pos.x, pos.y);
-        box.setFillColor(id==0 ? sf::Color(80,160,255,200)
-                                : sf::Color(255,80,80,200));
+        box.setFillColor(id == 0 ? sf::Color(80,160,255,200)
+                                 : sf::Color(255,80,80,200));
         box.setOutlineColor(sf::Color::White);
         box.setOutlineThickness(2.f);
         ventana.draw(box);
     }
 }
 
-// ── Getters / setters ──────────────────────────────────────
+// ── Getters ──────────────────────────────────────────────────
 sf::Vector2f Jugador::getPosicion() const {
     b2Vec2 p = b2Body_GetPosition(cuerpo);
     return {p.x, p.y};
@@ -228,12 +340,21 @@ void Jugador::eliminar() {
 }
 
 void Jugador::resetear(sf::Vector2f pos) {
-    estado          = EstadoJug::Cayendo;
-    enSuelo         = false;
-    tiempoSinSuelo  = 0.f;
-    saltoPresionado = false;
-    ganchoPresionado= false;
-    mirandoDerecha  = (id == 0);
+    estado              = EstadoJug::Cayendo;
+    estadoAnterior      = EstadoJug::Cayendo;
+    enSuelo             = false;
+    tiempoSinSuelo      = 0.f;
+    ganchoPresionado    = false;
+    deslizPresionado    = false;
+    timerDesliz         = 0.f;
+    timerSalidaDesliz   = 0.f;
+    animCaidaCongelada  = false;
+    saltando            = false;
+    puedesSaltar        = false;
+    timerSalto          = 0.f;
+    cooldownSalto       = 0.f;
+    deslizBoostAplicado = false;
+    mirandoDerecha      = (id == 0);
     gancho->soltar();
     b2Body_Enable(cuerpo);
     b2Body_SetTransform(cuerpo, {pos.x, pos.y}, b2MakeRot(0.f));
@@ -242,26 +363,100 @@ void Jugador::resetear(sf::Vector2f pos) {
 
 void Jugador::recibirImpacto() {
     b2Vec2 vel = b2Body_GetLinearVelocity(cuerpo);
-    b2Body_SetLinearVelocity(cuerpo, {vel.x*0.2f, -300.f});
+    b2Body_SetLinearVelocity(cuerpo, {vel.x * 0.2f, -300.f});
     gancho->soltar();
 }
 
 void Jugador::actualizarEstado() {
     b2Vec2 vel = b2Body_GetLinearVelocity(cuerpo);
-    if (enSuelo)
-        estado = std::abs(vel.x) > 30.f ? EstadoJug::Corriendo : EstadoJug::Idle;
-    else
+
+    estadoAnterior = estado;
+
+    if (timerDesliz > 0.f) {
+        estado = EstadoJug::Deslizando;
+        return;
+    }
+    // Durante la salida del desliz mantenemos el estado Deslizando
+    // para que actualizarAnimacion pueda mostrar el frame congelado.
+    if (timerSalidaDesliz > 0.f) {
+        estado = EstadoJug::Deslizando;
+        return;
+    }
+    if (enSuelo) {
+        float absVel = std::abs(vel.x);
+        if (estado == EstadoJug::Corriendo)
+            estado = absVel > 15.f ? EstadoJug::Corriendo : EstadoJug::Idle;
+        else
+            estado = absVel > 60.f ? EstadoJug::Corriendo : EstadoJug::Idle;
+    } else {
         estado = vel.y < 0.f ? EstadoJug::Saltando : EstadoJug::Cayendo;
+    }
 }
 
 void Jugador::actualizarAnimacion() {
+    bool congelar = false;
+
     switch (estado) {
-        case EstadoJug::Idle:       anim.setEstado(ANIM_IDLE);     break;
-        case EstadoJug::Corriendo:  anim.setEstado(ANIM_CORRER);   break;
+        case EstadoJug::Idle:
+            anim.setEstado(ANIM_IDLE);
+            break;
+
+        case EstadoJug::Corriendo:
+            anim.setEstado(ANIM_CORRER);
+            break;
+
         case EstadoJug::Saltando:
-        case EstadoJug::Cayendo:    anim.setEstado(ANIM_SALTAR);   break;
-        case EstadoJug::Deslizando: anim.setEstado(ANIM_DESLIZAR); break;
-        default: break;
+            // loop=false: avanza automáticamente y se detiene en el último frame.
+            // setEstado solo reinicia si cambia desde otro estado (por ej. desde Idle/Corriendo).
+            anim.setEstado(ANIM_SALTAR);
+            break;
+
+        case EstadoJug::Cayendo:
+            // Usamos la misma fila de salto. Nos aseguramos de estar en ANIM_SALTAR.
+            anim.setEstado(ANIM_SALTAR);
+            // La primera vez que entramos en Cayendo congelamos en el último frame
+            // y mantenemos esa congelación mientras seguimos cayendo.
+            congelar = true;
+            if (!animCaidaCongelada) {
+                animCaidaCongelada = true;
+            }
+            break;
+
+        case EstadoJug::Deslizando:
+            anim.setEstado(ANIM_DESLIZAR);
+            if (timerSalidaDesliz > 0.f) {
+                // Fase de salida: congela el último frame hasta que el timer expire.
+                congelar = true;
+            }
+            break;
+
+        default:
+            break;
     }
+
+    // Avanzar la animación normalmente…
     anim.update();
+    // …y después congelar si corresponde (así el freeze siempre gana).
+    if (congelar) {
+        anim.congelarUltimoFrame();
+    }
+}
+
+// ── Freno externo (por colisión con caja del rival) ──────────
+void Jugador::aplicarFreno(float factor)
+{
+    if (estado == EstadoJug::Muerto) return;
+    b2Vec2 vel = b2Body_GetLinearVelocity(cuerpo);
+    // Solo frenar si hay velocidad significativa
+    if (std::abs(vel.x) > 20.f) {
+        b2Body_SetLinearVelocity(cuerpo, {vel.x * factor, vel.y});
+        // Cancelar desliz si estaba activo (el golpe lo interrumpe)
+        if (timerDesliz > 0.f) {
+            timerDesliz       = 0.f;
+            timerSalidaDesliz = DURACION_SALIDA_DESLIZ;
+        }
+        // Partículas de impacto
+        particulas.emitir(getPosicion() + sf::Vector2f(0, 10.f),
+                          TipoParticula::Polvo, sf::Color(255, 200, 80), 8);
+    }
 }

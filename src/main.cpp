@@ -1,9 +1,11 @@
 // ============================================================
 // main.cpp — Overdrive (Box2D v3)
-// Sistema de vidas: 3 vidas por jugador.
-// Al morir uno → pantalla "sobrevivió", luego ambos respawnean
-// en el inicio con la cámara reseteada.
-// Al quedarse sin vidas → pantalla de fin de juego con imagen.
+// Novedades v3:
+//   - Cajas del jugador frena al tocarlas (no bloquean)
+//   - Picos en el mapa matan al jugador
+//   - Gancho solo en superficies marcadas
+//   - Desliz en bajada agrega impulso
+//   - HUD con nombre, velocidad en Rajdhani-Bold
 // ============================================================
 #include <SFML/Graphics.hpp>
 #include <SFML/Audio.hpp>
@@ -23,7 +25,10 @@
 #include "Particulas.hpp"
 
 static const int   VIDAS_INICIALES  = 3;
-static const float GRACIA_INICIO    = 1.2f;  // segundos sin poder morir al respawnear
+static const float GRACIA_INICIO    = 1.2f;
+
+// Cuánto se frena al tocar una caja del jugador (factor por frame)
+static const float CAJA_FRENO       = 0.55f;
 
 enum class Estado { Jugando, EntreRespawn, FinJuego };
 
@@ -32,6 +37,18 @@ static bool accionConfirmar() {
         || sf::Keyboard::isKeyPressed(sf::Keyboard::Space)
         || sf::Joystick::isButtonPressed(0, BTN_A)
         || sf::Joystick::isButtonPressed(1, BTN_A);
+}
+
+// ── Construye la lista de b2BodyId gancheables del mapa ──────
+static std::vector<b2BodyId> construirListaGancheables(Mapa& mapa)
+{
+    std::vector<b2BodyId> lista;
+    for (auto& p : mapa.getPlataformas()) {
+        // Solo techos marcados explícitamente — no el suelo ni plataformas normales
+        if (p.valido && p.esTechoGancho)
+            lista.push_back(p.cuerpo);
+    }
+    return lista;
 }
 
 int main()
@@ -65,44 +82,49 @@ int main()
     Camara camara(mapa.getAncho(), mapa.getAlto());
     HUD    hud(ventana);
 
+    // ── Lista de bodies gancheables (se reconstruye si cambia el mapa) ──
+    std::vector<b2BodyId> listaGancheables = construirListaGancheables(mapa);
+
     // ── Estado de vidas ──────────────────────────────────────
-    std::vector<int>  vidas      = {VIDAS_INICIALES, VIDAS_INICIALES};
-    // vivoAntes: detectar transición vivo→muerto (solo contar 1 vez)
-    std::vector<bool> vivoAntes  = {true, true};
-    // Timer de gracia: primeros segundos tras respawn no se puede morir
+    std::vector<int>  vidas     = {VIDAS_INICIALES, VIDAS_INICIALES};
+    std::vector<bool> vivoAntes = {true, true};
     float timerGracia = GRACIA_INICIO;
 
-    // ── Crear jugadores (inicio o reinicio completo) ──────────
     auto crearJugadores = [&]() {
         std::vector<std::unique_ptr<Jugador>> jgs;
         jgs.push_back(std::make_unique<Jugador>(
-            worldId, mapa.spawnJugador(0), 0, particulas));
+            worldId, mapa.spawnJugador(0, 0.f), 0, particulas));
         jgs.push_back(std::make_unique<Jugador>(
-            worldId, mapa.spawnJugador(1), 1, particulas));
+            worldId, mapa.spawnJugador(1, 0.f), 1, particulas));
+        // Registrar lista de gancheables en cada gancho
+        for (auto& j : jgs)
+            j->gancho->setGancheables(&listaGancheables);
         vivoAntes   = {true, true};
         timerGracia = GRACIA_INICIO;
         camara.resetearAlInicio();
         return jgs;
     };
 
-    // ── Respawnear (entre vidas: mismos objetos, posición reset) ─
     auto respawnearJugadores = [&](std::vector<std::unique_ptr<Jugador>>& jgs) {
+        float camX = camara.getCentro().x;
         for (int i = 0; i < (int)jgs.size(); ++i)
-            jgs[i]->resetear(mapa.spawnJugador(i));
+            jgs[i]->resetear(mapa.spawnJugador(i, camX));
         vivoAntes   = {true, true};
-        timerGracia = GRACIA_INICIO;  // gracia tras respawn
-        camara.resetearAlInicio();    // cámara vuelve al inicio
+        timerGracia = GRACIA_INICIO;
     };
 
     auto jugadores = crearJugadores();
 
-    Estado estadoJuego   = Estado::Jugando;
-    float  timerPausa    = 0.f;
-    bool   confirmarPress= false;
-    int    ganadorFinal  = -1;
+    Estado estadoJuego    = Estado::Jugando;
+    float  timerPausa     = 0.f;
+    bool   confirmarPress = false;
+    int    ganadorFinal   = -1;
 
     sf::Clock reloj;
     float acumulador = 0.f;
+
+    // ── Timer para reconstruir lista de gancheables ──────────
+    float timerActualizaGancheables = 0.f;
 
     while (ventana.isOpen())
     {
@@ -116,7 +138,6 @@ int main()
         // ── JUGANDO ──────────────────────────────────────────
         if (estadoJuego == Estado::Jugando)
         {
-            // Bajar timer de gracia
             if (timerGracia > 0.f) timerGracia -= dt;
 
             for (auto& j : jugadores) j->procesarEntrada(dt);
@@ -128,22 +149,56 @@ int main()
             }
 
             for (auto& j : jugadores) j->update(dt);
-            mapa.update(dt);
 
-            // Colisión con cajas
+            // ── Reconstruir lista de gancheables periódicamente ──
+            // (cuando se generan/eliminan chunks cambian los bodies)
+            timerActualizaGancheables += dt;
+            if (timerActualizaGancheables > 2.f) {
+                timerActualizaGancheables = 0.f;
+                listaGancheables = construirListaGancheables(mapa);
+                for (auto& j : jugadores)
+                    j->gancho->setGancheables(&listaGancheables);
+            }
+
+            mapa.update(dt, camara.getCentro().x);
+
+            // ── Colisión con cajas del pickup ─────────────────
+            // Las cajas FRENA al jugador que las toca (no bloquean)
             for (auto& j : jugadores) {
+                if (j->estaMuerto()) continue;
                 sf::FloatRect bj = j->getBounds();
                 for (auto& c : mapa.getCajas()) {
                     if (!c.activa) continue;
                     if (bj.intersects(c.visual.getGlobalBounds())) {
-                        c.activa = false; c.timerRespawn = 0.f;
+                        // Frenar velocidad X del jugador
+                        j->aplicarFreno(CAJA_FRENO);
+                        c.activa       = false;
+                        c.timerRespawn = 0.f;
                         particulas.emitir(c.posBase, TipoParticula::Chispa,
                                           sf::Color(255,220,80), 15);
                     }
                 }
             }
 
-            // Cámara — solo seguir a jugadores vivos
+            // ── Colisión con picos ────────────────────────────
+            if (timerGracia <= 0.f) {
+                for (auto& j : jugadores) {
+                    if (j->estaMuerto()) continue;
+                    sf::FloatRect bj = j->getBounds();
+                    for (auto& p : mapa.getPlataformas()) {
+                        if (!p.esPico || !p.valido) continue;
+                        sf::FloatRect bp = p.rectVisual.getGlobalBounds();
+                        if (bj.intersects(bp)) {
+                            // Muere instantáneamente
+                            j->eliminar();
+                            particulas.emitir(j->getPosicion(),
+                                TipoParticula::Chispa, sf::Color(255, 60, 60), 25);
+                        }
+                    }
+                }
+            }
+
+            // Cámara
             std::vector<sf::Vector2f> posVivos;
             for (auto& j : jugadores)
                 if (!j->estaMuerto())
@@ -151,7 +206,7 @@ int main()
             if (!posVivos.empty())
                 camara.update(posVivos, dt);
 
-            // Eliminaciones por salirse de pantalla — solo si pasó la gracia
+            // Eliminación por salir de pantalla
             if (timerGracia <= 0.f) {
                 for (auto& j : jugadores) {
                     if (!j->estaMuerto() && camara.fueraDePantalla(j->getPosicion())) {
@@ -164,7 +219,7 @@ int main()
 
             particulas.update(dt);
 
-            // ── Detectar muerte: solo transición vivo→muerto ─
+            // ── Detectar muerte ───────────────────────────────
             int idMuerto = -1;
             for (int i = 0; i < (int)jugadores.size(); ++i) {
                 bool muertoAhora = jugadores[i]->estaMuerto();
@@ -233,7 +288,10 @@ int main()
                 ganadorFinal = -1;
                 hud.ocultarVictoria();
                 particulas.limpiar();
+                mapa.resetear();
+                camara.resetearAlInicio();
                 jugadores.clear();
+                listaGancheables.clear();
                 jugadores = crearJugadores();
                 estadoJuego = Estado::Jugando;
             }
