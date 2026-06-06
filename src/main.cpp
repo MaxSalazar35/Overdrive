@@ -1,6 +1,8 @@
 // ============================================================
 // main.cpp — Overdrive (Box2D v3)
-// Novedades v3:
+// Novedades v4 (menú):
+//   - Menú principal con Play / Cómo Jugar / Ajustes / Salir
+//   - Selección de personaje por jugador con lore
 //   - Cajas del jugador frena al tocarlas (no bloquean)
 //   - Picos en el mapa matan al jugador
 //   - Gancho solo en superficies marcadas
@@ -23,6 +25,7 @@
 #include "Camara.hpp"
 #include "HUD.hpp"
 #include "Particulas.hpp"
+#include "Menu.hpp"
 
 static const int   VIDAS_INICIALES  = 3;
 static const float GRACIA_INICIO    = 1.2f;
@@ -59,8 +62,6 @@ int main()
     ventana.setKeyRepeatEnabled(false);
 
     // ── Música ───────────────────────────────────────────────
-    // Música: intentar sf::Music (streaming). Si falla OpenAL, no hay audio.
-    // El error 0x80070006 es del dispositivo Windows — no es un bug del código.
     sf::Music musica;
     bool musicaOK = musica.openFromFile("assets/music/musica.ogg");
     if (musicaOK) {
@@ -68,6 +69,13 @@ int main()
         musica.setVolume(50.f);
         musica.play();
     }
+
+    // ── MENÚ PRINCIPAL ────────────────────────────────────────
+    Menu menu(ventana, musica);
+    ResultadoMenu resMenu = menu.ejecutar();
+
+    if (resMenu.salir || !ventana.isOpen())
+        return 0;
 
     // ── Box2D v3 ─────────────────────────────────────────────
     b2WorldDef wd = b2DefaultWorldDef();
@@ -282,11 +290,25 @@ int main()
         {
             bool conf = accionConfirmar();
             if (conf && !confirmarPress) {
+                // Destruir mundo físico antes del menú
+                b2DestroyWorld(worldId);
+
+                // Volver al menú principal
+                Menu menuRematch(ventana, musica);
+                ResultadoMenu resRematch = menuRematch.ejecutar();
+
+                if (resRematch.salir || !ventana.isOpen())
+                    break;
+
+                // Recrear mundo físico con configuración nueva
+                wd.gravity = {0.f, GRAVEDAD};
+                worldId = b2CreateWorld(&wd);
+
                 vidas        = {VIDAS_INICIALES, VIDAS_INICIALES};
                 ganadorFinal = -1;
                 hud.ocultarVictoria();
                 particulas.limpiar();
-                mapa.resetear();
+                mapa = Mapa(worldId);
                 camara.resetearAlInicio();
                 jugadores.clear();
                 listaGancheables.clear();
