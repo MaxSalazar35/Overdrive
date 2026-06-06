@@ -1,51 +1,41 @@
 // ============================================================
 // Mapa.cpp — Overdrive (Box2D v3)
 //
-// Diseño limpio:
-//   - Suelo continuo siempre (y=620, h=100). Nunca hay huecos
-//     en el suelo excepto en el chunk de picos, donde la base
-//     roja tapa el hueco.
-//   - Plataformas de h FIJA (60px) suspendidas. No bajan al suelo.
-//     Se ven como bloques flotantes sobre el fondo cyberpunk.
-//   - Rampas conectan dos plataformas de la misma altura (o que 
-//     terminen en el mismo y). Base de la rampa = ySup + hMax.
-//   - Sin solapamientos: cada rampa ocupa el hueco exacto entre
-//     dos plataformas sin tocarlas.
-//   - Spawn garantizado en zona libre (antes del primer bloque).
+// CONVENCIÓN DE RAMPAS (definitiva):
+//   Bajada (plat izq ALTA → plat der BAJA, jugador desciende):
+//     hIzq = diff, hDer = 0  → punta ← (la punta señala de dónde viene)
+//     ySup = y_der (la más baja en pantalla = mayor y)
+//     yBase = ySup + hIzq = y_der + diff = y_izq  ← conecta con plat izq
+//
+//   Subida (plat izq BAJA → plat der ALTA, jugador asciende):
+//     hIzq = 0, hDer = diff  → punta → (la punta señala hacia dónde va)
+//     ySup = y_der (la más alta en pantalla = menor y)
+//     yBase = ySup + hDer = y_der + diff = y_izq  ← conecta con plat izq
+//
+// BLOQUES: h fija (PLAT_H=60px). Sin extensión hasta SUELO_Y para evitar solapamiento con picos.
 // ============================================================
 #include "Mapa.hpp"
 #include "Constantes.hpp"
 #include <iostream>
 #include <cmath>
 
-static constexpr float SUELO_Y  = 620.f;   // y donde empieza el suelo
-static constexpr float PLAT_H   = 60.f;    // altura estándar de plataforma
-static constexpr float RAMPA_W  = 80.f;    // ancho de una rampa de conexión
+static constexpr float SUELO_Y = 620.f;
+static constexpr float PLAT_H  = 60.f;
 
 static const sf::Color COL_SUELO    (22,  30,  52);
 static const sf::Color COL_PLAT     (35,  52,  95);
 static const sf::Color COL_PLAT_TOP (120, 190, 255);
 static const sf::Color COL_RAMPA    (30,  55,  82);
-static const sf::Color COL_RAMPA_TOP(100, 175, 255);
 static const sf::Color COL_PICO_BASE(55,  18,  18);
 static const sf::Color COL_PICO_PTA (210, 45,  45);
 
 // ─────────────────────────────────────────────────────────────
-// PLANTILLA A — Normal: plataformas a diferentes alturas
-// Cada plataforma es {x, ySup, w, true/false, h=PLAT_H(default)}
-// Las rampas conectan plataformas adyacentes sin solapar.
+// PLANTILLA A — Normal
+// Plataformas: 480,400,480,360,440,360,480,300,400,360
 // ─────────────────────────────────────────────────────────────
-// Diseño A: (suelo a y=620)
-//  Plat1: x=100..460, y=480   → superficie en 480, base en 540
-//  Rampa1: x=460..540, baja de 480 a 400
-//  Plat2: x=540..840, y=400
-//  Rampa2: x=840..920, sube de 400 a 480
-//  Plat3: x=920..1240, y=480
-//  ... etc.
 const std::vector<Mapa::DefTerreno> Mapa::TERRENO_A = {
-    // Suelo continuo
-    {    0.f, SUELO_Y, 3840.f, true, 100.f },
-    // Plataformas (h por defecto = PLAT_H, calculado en generarConPlantilla)
+    {    0.f, SUELO_Y, 3840.f, true, 100.f },         // suelo
+    {    0.f,    0.f, 3840.f, true,  20.f, true },    // techo continuo gancheable
     {  100.f, 480.f,  360.f, true },
     {  540.f, 400.f,  300.f, true },
     {  920.f, 480.f,  320.f, true },
@@ -57,29 +47,35 @@ const std::vector<Mapa::DefTerreno> Mapa::TERRENO_A = {
     { 3240.f, 400.f,  320.f, true },
     { 3640.f, 360.f,  200.f, true },
 };
-// Rampas que llenan exactamente el hueco entre plataformas
-// {x, ySup_alta, w, hIzq, hDer}
-// ySup_alta = y de la plataforma más alta de las dos que conecta
-// hIzq/hDer = diferencia de altura entre las dos plataformas
 const std::vector<Mapa::DefRampa> Mapa::RAMPAS_A = {
-    // hIzq siempre 0, hDer=diff, ySup=min(y_izq,y_der) → punta siempre →
-    {  460.f, 400.f, 80.f, 0.f,  80.f},  // plat1(480)→plat2(400)
-    {  840.f, 400.f, 80.f, 0.f,  80.f},  // plat2(400)→plat3(480)
-    { 1240.f, 360.f, 80.f, 0.f, 120.f},  // plat3(480)→plat4(360)
-    { 1600.f, 360.f, 80.f, 0.f,  80.f},  // plat4(360)→plat5(440)
-    { 2020.f, 360.f, 80.f, 0.f,  80.f},  // plat5(440)→plat6(360)
-    { 2400.f, 360.f, 80.f, 0.f, 120.f},  // plat6(360)→plat7(480)
-    { 2800.f, 300.f, 80.f, 0.f, 180.f},  // plat7(480)→plat8(300)
-    { 3160.f, 300.f, 80.f, 0.f, 100.f},  // plat8(300)→plat9(400)
-    { 3560.f, 360.f, 80.f, 0.f,  40.f},  // plat9(400)→plat10(360)
+    // 480→400 SUBIDA:  ySup=400, hIzq=0,   hDer=80  → yTopIzq=480 yTopDer=400
+    {  460.f, 400.f, 80.f,   0.f,  80.f},
+    // 400→480 BAJADA:  ySup=400, hIzq=80,  hDer=0   → yTopIzq=400 yTopDer=480
+    {  840.f, 400.f, 80.f,  80.f,   0.f},
+    // 480→360 SUBIDA:  ySup=360, hIzq=0,   hDer=120 → yTopIzq=480 yTopDer=360
+    { 1240.f, 360.f, 80.f,   0.f, 120.f},
+    // 360→440 BAJADA:  ySup=360, hIzq=80,  hDer=0   → yTopIzq=360 yTopDer=440
+    { 1600.f, 360.f, 80.f,  80.f,   0.f},
+    // 440→360 SUBIDA:  ySup=360, hIzq=0,   hDer=80  → yTopIzq=440 yTopDer=360
+    { 2020.f, 360.f, 80.f,   0.f,  80.f},
+    // 360→480 BAJADA:  ySup=360, hIzq=120, hDer=0   → yTopIzq=360 yTopDer=480
+    { 2400.f, 360.f, 80.f, 120.f,   0.f},
+    // 480→300 SUBIDA:  ySup=300, hIzq=0,   hDer=180 → yTopIzq=480 yTopDer=300
+    { 2800.f, 300.f, 80.f,   0.f, 180.f},
+    // 300→400 BAJADA:  ySup=300, hIzq=100, hDer=0   → yTopIzq=300 yTopDer=400
+    { 3160.f, 300.f, 80.f, 100.f,   0.f},
+    // 400→360 SUBIDA:  ySup=360, hIzq=0,   hDer=40  → yTopIzq=400 yTopDer=360
+    { 3560.f, 360.f, 80.f,   0.f,  40.f},
 };
 const std::vector<Mapa::DefPico> Mapa::PICOS_A = {};
 
 // ─────────────────────────────────────────────────────────────
-// PLANTILLA B — Descenso: plataformas escalonadas hacia abajo
+// PLANTILLA B — Descenso escalonado
+// Plataformas: 260,320,380,440,500,540,460,380,300,260
 // ─────────────────────────────────────────────────────────────
 const std::vector<Mapa::DefTerreno> Mapa::TERRENO_B = {
-    {    0.f, SUELO_Y, 3840.f, true, 100.f },
+    {    0.f, SUELO_Y, 3840.f, true, 100.f },         // suelo
+    {    0.f,    0.f, 3840.f, true,  20.f, true },    // techo continuo gancheable
     {   60.f, 260.f,  360.f, true },
     {  500.f, 320.f,  340.f, true },
     {  920.f, 380.f,  320.f, true },
@@ -92,36 +88,40 @@ const std::vector<Mapa::DefTerreno> Mapa::TERRENO_B = {
     { 3640.f, 260.f,  200.f, true },
 };
 const std::vector<Mapa::DefRampa> Mapa::RAMPAS_B = {
-    {  420.f, 260.f, 80.f, 0.f,  60.f},  // 260→320
-    {  840.f, 320.f, 80.f, 0.f,  60.f},  // 320→380
-    { 1240.f, 380.f, 80.f, 0.f,  60.f},  // 380→440
-    { 1660.f, 440.f, 80.f, 0.f,  60.f},  // 440→500
-    { 2060.f, 500.f, 80.f, 0.f,  40.f},  // 500→540
-    { 2440.f, 460.f, 80.f, 0.f,  80.f},  // 540→460
-    { 2820.f, 380.f, 80.f, 0.f,  80.f},  // 460→380
-    { 3200.f, 300.f, 80.f, 0.f,  80.f},  // 380→300
-    { 3560.f, 260.f, 80.f, 0.f,  40.f},  // 300→260
+    // 260→320 BAJADA:  ySup=260, hIzq=60, hDer=0 → yTopIzq=260 yTopDer=320
+    {  420.f, 260.f, 80.f,  60.f,   0.f},
+    // 320→380 BAJADA:  ySup=320, hIzq=60, hDer=0 → yTopIzq=320 yTopDer=380
+    {  840.f, 320.f, 80.f,  60.f,   0.f},
+    // 380→440 BAJADA:  ySup=380, hIzq=60, hDer=0 → yTopIzq=380 yTopDer=440
+    { 1240.f, 380.f, 80.f,  60.f,   0.f},
+    // 440→500 BAJADA:  ySup=440, hIzq=60, hDer=0 → yTopIzq=440 yTopDer=500
+    { 1660.f, 440.f, 80.f,  60.f,   0.f},
+    // 500→540 BAJADA:  ySup=500, hIzq=40, hDer=0 → yTopIzq=500 yTopDer=540
+    { 2060.f, 500.f, 80.f,  40.f,   0.f},
+    // 540→460 SUBIDA:  ySup=460, hIzq=0,  hDer=80 → yTopIzq=540 yTopDer=460
+    { 2440.f, 460.f, 80.f,   0.f,  80.f},
+    // 460→380 SUBIDA:  ySup=380, hIzq=0,  hDer=80 → yTopIzq=460 yTopDer=380
+    { 2820.f, 380.f, 80.f,   0.f,  80.f},
+    // 380→300 SUBIDA:  ySup=300, hIzq=0,  hDer=80 → yTopIzq=380 yTopDer=300
+    { 3200.f, 300.f, 80.f,   0.f,  80.f},
+    // 300→260 SUBIDA:  ySup=260, hIzq=0,  hDer=40 → yTopIzq=300 yTopDer=260
+    { 3560.f, 260.f, 80.f,   0.f,  40.f},
 };
 const std::vector<Mapa::DefPico> Mapa::PICOS_B = {};
 
 // ─────────────────────────────────────────────────────────────
-// PLANTILLA C — Altura: plataformas muy altas + techos de gancho
+// PLANTILLA C — Plataformas altas + techos de gancho
 // ─────────────────────────────────────────────────────────────
 const std::vector<Mapa::DefTerreno> Mapa::TERRENO_C = {
-    {    0.f, SUELO_Y, 3840.f, true, 100.f },
-    // Plataformas bajas
+    {    0.f, SUELO_Y, 3840.f, true, 100.f },         // suelo
+    {    0.f,    0.f, 3840.f, true,  20.f, true },    // techo continuo gancheable
     {  100.f, 500.f,  240.f, true },
     {  420.f, 460.f,  220.f, true },
     {  720.f, 500.f,  240.f, true },
     { 1040.f, 440.f,  220.f, true },
-    // Salto: plataformas altas
     { 1360.f, 260.f,  280.f, true },
     { 1720.f, 200.f,  260.f, true },
     { 2060.f, 260.f,  280.f, true },
-    // Techos de gancho (altos, h fijo pequeño para no llenar la pantalla)
-    { 1400.f,  80.f,  480.f, true, 40.f },
-    { 2100.f,  60.f,  440.f, true, 40.f, true },
-    { 2700.f,  80.f,  500.f, true, 40.f, true },
     // Plataformas bajas finales
     { 2440.f, 480.f,  260.f, true },
     { 2800.f, 440.f,  280.f, true },
@@ -129,58 +129,45 @@ const std::vector<Mapa::DefTerreno> Mapa::TERRENO_C = {
     { 3520.f, 460.f,  240.f, true },
 };
 const std::vector<Mapa::DefRampa> Mapa::RAMPAS_C = {
-    {  340.f, 460.f, 80.f, 0.f,  40.f},
-    {  640.f, 460.f, 80.f, 0.f,  40.f},
-    {  960.f, 440.f, 80.f, 0.f,  60.f},
-    { 2380.f, 260.f, 80.f, 0.f, 220.f},
-    { 2720.f, 440.f, 80.f, 0.f,  40.f},
-    { 3080.f, 440.f, 80.f, 0.f,  60.f},
-    { 3440.f, 460.f, 80.f, 0.f,  40.f},
+    // 500→460 SUBIDA:  ySup=460, hIzq=0,  hDer=40 → yTopIzq=500 yTopDer=460
+    {  340.f, 460.f, 80.f,   0.f,  40.f},
+    // 460→500 BAJADA:  ySup=460, hIzq=40, hDer=0  → yTopIzq=460 yTopDer=500
+    {  640.f, 460.f, 80.f,  40.f,   0.f},
+    // 500→440 SUBIDA:  ySup=440, hIzq=0,  hDer=60 → yTopIzq=500 yTopDer=440
+    {  960.f, 440.f, 80.f,   0.f,  60.f},
+    // Sin rampa entre zona alta (260) y baja (480): desnivel de 220px, se usa gancho
+    // 480→440 SUBIDA: ySup=440, hIzq=0, hDer=40, w=100 → yTopIzq=480 yTopDer=440
+    { 2700.f, 440.f,100.f,   0.f,  40.f},
+    // 440→500 BAJADA:  ySup=440, hIzq=60, hDer=0  → yTopIzq=440 yTopDer=500
+    { 3080.f, 440.f, 80.f,  60.f,   0.f},
+    // 500→460 SUBIDA:  ySup=460, hIzq=0,  hDer=40 → yTopIzq=500 yTopDer=460
+    { 3440.f, 460.f, 80.f,   0.f,  40.f},
 };
 const std::vector<Mapa::DefPico> Mapa::PICOS_C = {};
 
 // ─────────────────────────────────────────────────────────────
-// PLANTILLA D — Peligro: picos reemplazando parte del suelo
-// Los picos ocupan los huecos del suelo. Las plataformas sobre
-// los picos son la única forma segura de cruzar.
+// PLANTILLA D — Picos en el suelo, plataformas alcanzables
 // ─────────────────────────────────────────────────────────────
 const std::vector<Mapa::DefTerreno> Mapa::TERRENO_D = {
-    // Suelo con huecos (los picos rellenan los huecos)
-    {    0.f, SUELO_Y,  380.f, true, 100.f },
+    {    0.f, SUELO_Y,  380.f, true, 100.f },         // suelo (zona izq)
     {  720.f, SUELO_Y,  520.f, true, 100.f },
     { 1580.f, SUELO_Y,  440.f, true, 100.f },
     { 2360.f, SUELO_Y,  540.f, true, 100.f },
     { 3240.f, SUELO_Y,  600.f, true, 100.f },
-    // Plataformas sobre los huecos de picos (alcanzables con salto, max 160px sobre suelo)
-    {  280.f, 460.f,  280.f, true },
-    {  640.f, 480.f,  260.f, true },
-    {  960.f, 460.f,  280.f, true },
-    { 1300.f, 460.f,  300.f, true },
-    { 1660.f, 480.f,  280.f, true },
-    { 2020.f, 460.f,  320.f, true },
-    { 2420.f, 460.f,  280.f, true },
-    { 2760.f, 480.f,  300.f, true },
-    { 3140.f, 460.f,  280.f, true },
-    { 3500.f, 480.f,  260.f, true },
-    // Techos de gancho
-    {  460.f,  90.f,  460.f, true, 40.f, true },
-    { 1140.f,  70.f,  420.f, true, 40.f, true },
-    { 2060.f,  90.f,  460.f, true, 40.f, true },
-    { 2900.f,  70.f,  380.f, true, 40.f, true },
+    {    0.f,    0.f, 3840.f, true,  20.f, true },    // techo continuo gancheable
+    // Plataformas suspendidas: noExtender=true para no solaparse con los picos de abajo
+    {  280.f, 460.f,  280.f, true, 0.f, false, true },
+    {  640.f, 480.f,  260.f, true, 0.f, false, true },
+    {  960.f, 460.f,  280.f, true, 0.f, false, true },
+    { 1300.f, 460.f,  300.f, true, 0.f, false, true },
+    { 1660.f, 480.f,  280.f, true, 0.f, false, true },
+    { 2020.f, 460.f,  320.f, true, 0.f, false, true },
+    { 2420.f, 460.f,  280.f, true, 0.f, false, true },
+    { 2760.f, 480.f,  300.f, true, 0.f, false, true },
+    { 3140.f, 460.f,  280.f, true, 0.f, false, true },
+    { 3500.f, 480.f,  260.f, true, 0.f, false, true },
 };
-const std::vector<Mapa::DefRampa> Mapa::RAMPAS_D = {
-    // Todas las rampas con hIzq=0 (punta →), ySup=min(y_izq,y_der), hDer=diff
-    {  200.f, 460.f, 80.f, 0.f, 20.f},  // suelo(620→460 pero viene de suelo) — rampa de acceso
-    {  560.f, 460.f, 80.f, 0.f, 20.f},  // plat1(460)→plat2(480)
-    {  880.f, 460.f, 80.f, 0.f, 20.f},  // plat2(480)→plat3(460)
-    { 1220.f, 460.f, 80.f, 0.f, 20.f},  // plat3(460)→plat4(460) plano
-    { 1580.f, 460.f, 80.f, 0.f, 20.f},  // plat4(460)→plat5(480)
-    { 1940.f, 460.f, 80.f, 0.f, 20.f},  // plat5(480)→plat6(460)
-    { 2340.f, 460.f, 80.f, 0.f, 20.f},  // plat6(460)→plat7(460) plano
-    { 2680.f, 460.f, 80.f, 0.f, 20.f},  // plat7(460)→plat8(480)
-    { 3060.f, 460.f, 80.f, 0.f, 20.f},  // plat8(480)→plat9(460)
-    { 3420.f, 460.f, 80.f, 0.f, 20.f},  // plat9(460)→plat10(480)
-};
+const std::vector<Mapa::DefRampa> Mapa::RAMPAS_D = {};
 const std::vector<Mapa::DefPico> Mapa::PICOS_D = {
     {  380.f, SUELO_Y,  340.f, 9 },
     { 1240.f, SUELO_Y,  340.f, 9 },
@@ -211,7 +198,6 @@ Mapa::Mapa(b2WorldId worldId) : worldId(worldId)
             capaCargada[i] = true;
         } else { modoFallback = true; }
     }
-    // Techo global
     {
         b2BodyDef bd = b2DefaultBodyDef(); bd.type = b2_staticBody;
         bd.position = {0.f, -20.f};
@@ -230,14 +216,12 @@ Mapa::~Mapa() { destruirFisicas(); }
 
 void Mapa::generarChunk(int idx)
 {
-    // Orden: A → D (picos) → B (descenso) → C (altura) → repite
-    // Así los picos aparecen desde el segundo chunk en adelante.
     int tipo = contadorChunk % 4; contadorChunk++;
     const std::vector<DefTerreno>* t; const std::vector<DefRampa>* r;
     const std::vector<DefPico>* p;
     switch(tipo) {
         case 0: t=&TERRENO_A;r=&RAMPAS_A;p=&PICOS_A; break;
-        case 1: t=&TERRENO_D;r=&RAMPAS_D;p=&PICOS_D; break;  // picos pronto
+        case 1: t=&TERRENO_D;r=&RAMPAS_D;p=&PICOS_D; break;
         case 2: t=&TERRENO_B;r=&RAMPAS_B;p=&PICOS_B; break;
         default:t=&TERRENO_C;r=&RAMPAS_C;p=&PICOS_C; break;
     }
@@ -252,20 +236,16 @@ void Mapa::generarConPlantilla(int idx,
 {
     float ox = idx * anchoPx;
     for (const auto& d : terrenos) {
-        // Sin espejado — todos los chunks van en la misma dirección
-        float px = d.x;
         float h = (d.h > 0.f) ? d.h : PLAT_H;
-        agregarTerreno(ox + px, d.y, d.w, h, d.gancheable, idx, d.esTechoGancho);
+        agregarTerreno(ox + d.x, d.y, d.w, h, d.gancheable, idx,
+                       d.esTechoGancho, d.noExtender);
     }
-    for (const auto& d : rampas) {
+    for (const auto& d : rampas)
         agregarRampa(ox + d.x, d.ySup, d.w, d.hIzq, d.hDer, idx);
-    }
-    for (const auto& d : picos) {
+    for (const auto& d : picos)
         agregarPicos(ox + d.x, d.y, d.w, d.cantidad, idx);
-    }
-    for (const auto& d : cajas_def) {
+    for (const auto& d : cajas_def)
         agregarCaja(ox + d.x, d.y, idx);
-    }
 }
 
 void Mapa::eliminarChunk(int idx)
@@ -336,19 +316,13 @@ void Mapa::drawItems(sf::RenderWindow& v) {
 }
 
 sf::Vector2f Mapa::spawnJugador(int id, float camaraX) const {
-    // Calcular chunk actual según posición de la cámara
-    // Usamos el chunk donde está la cámara, con offset al inicio del chunk
-    float chunkActualX = 0.f;
+    float chunkActualX = chunkMin * anchoPx;
     if (camaraX > 0.f) {
-        int chunkActual = (int)(camaraX / anchoPx);
-        // Clamp al rango de chunks vivos
-        if (chunkActual < chunkMin) chunkActual = chunkMin;
-        if (chunkActual > chunkMax) chunkActual = chunkMax;
-        chunkActualX = chunkActual * anchoPx;
-    } else {
-        chunkActualX = chunkMin * anchoPx;
+        int ch = (int)(camaraX / anchoPx);
+        if (ch < chunkMin) ch = chunkMin;
+        if (ch > chunkMax) ch = chunkMax;
+        chunkActualX = ch * anchoPx;
     }
-    // Spawn al inicio del chunk actual, en zona libre antes del primer bloque
     float spawnY = SUELO_Y - 40.f;
     return id == 0 ? sf::Vector2f(chunkActualX + 20.f, spawnY)
                    : sf::Vector2f(chunkActualX + 55.f, spawnY);
@@ -357,52 +331,59 @@ sf::Vector2f Mapa::spawnJugador(int id, float camaraX) const {
 float Mapa::getAnchoTotal() const { return (chunkMax+1)*anchoPx; }
 
 // ── agregarTerreno ────────────────────────────────────────────
+// h fija — no se extiende hasta SUELO_Y para evitar solapamiento con picos.
 void Mapa::agregarTerreno(float x, float y, float w, float h,
-                           bool gancheable, int chunk, bool esTecho)
+                           bool gancheable, int chunk,
+                           bool esTecho, bool noExtender)
 {
+    bool esSuelo = (y >= SUELO_Y - 1.f);
+    // Extender plataformas suspendidas hasta el suelo para que no queden huecas,
+    // excepto cuando noExtender=true (chunk D: hay picos debajo) o es techo.
+    float hFinal = h;
+    if (!esSuelo && !esTecho && !noExtender) {
+        float extendida = SUELO_Y - y;
+        if (extendida > h) hFinal = extendida;
+    }
+
     Plataforma p;
     p.tipo=TipoPlat::Terreno; p.esGancheable=gancheable;
     p.esPico=false; p.chunk=chunk; p.usaConvex=false;
     p.esTechoGancho = esTecho;
 
-    bool esSuelo = (y >= SUELO_Y - 1.f);
-    p.rectVisual.setSize({w, h});
-    p.rectVisual.setPosition(x, y);
-    // Techos de gancho: color diferenciado (cyan/blanco brillante)
     sf::Color colFill  = esSuelo ? COL_SUELO : (esTecho ? sf::Color(20,50,80) : COL_PLAT);
     sf::Color colBorde = esSuelo ? sf::Color(40,55,90,140)
                        : (esTecho ? sf::Color(200,240,255) : COL_PLAT_TOP);
+
+    p.rectVisual.setSize({w, hFinal});
+    p.rectVisual.setPosition(x, y);
     p.rectVisual.setFillColor(colFill);
     p.rectVisual.setOutlineColor(colBorde);
     p.rectVisual.setOutlineThickness(esSuelo ? 1.f : (esTecho ? 3.f : 2.f));
 
     b2BodyDef bd = b2DefaultBodyDef(); bd.type = b2_staticBody;
-    bd.position = {x + w/2.f, y + h/2.f};
+    bd.position = {x + w/2.f, y + hFinal/2.f};
     p.cuerpo = b2CreateBody(worldId, &bd); p.valido = true;
-    b2Polygon box = b2MakeBox(w/2.f, h/2.f);
+    b2Polygon box = b2MakeBox(w/2.f, hFinal/2.f);
     b2ShapeDef sd = b2DefaultShapeDef(); sd.friction = 0.7f;
     b2CreatePolygonShape(p.cuerpo, &sd, &box);
     plataformas.push_back(p);
 
-    // Franja de acento superior (no en el suelo)
+    // Franja de acento superior
     if (!esSuelo) {
         Plataforma ac;
         ac.tipo=TipoPlat::Terreno; ac.chunk=chunk; ac.usaConvex=false;
         ac.valido=false; ac.esPico=false; ac.esGancheable=false;
         ac.rectVisual.setSize({w, 4.f});
         ac.rectVisual.setPosition(x, y);
-        // Techos de gancho: franja blanca muy visible
-        ac.rectVisual.setFillColor(esTecho ? sf::Color(220,240,255,255) : sf::Color(100,180,255,200));
+        ac.rectVisual.setFillColor(esTecho ? sf::Color(220,240,255,255)
+                                           : sf::Color(100,180,255,200));
         ac.rectVisual.setOutlineThickness(0.f);
         plataformas.push_back(ac);
     }
 }
 
 // ── agregarRampa ─────────────────────────────────────────────
-// ySup  = y de la esquina más alta del trapecio
-// hIzq  = altura del lado izquierdo (0 = punta, >0 = plano)
-// hDer  = altura del lado derecho
-// yBase = ySup + max(hIzq, hDer)  — coincide con la base de las plataformas adyacentes
+// Rampa con h fija — sin relleno inferior.
 void Mapa::agregarRampa(float x, float ySup, float w,
                          float hIzq, float hDer, int chunk)
 {
@@ -418,6 +399,7 @@ void Mapa::agregarRampa(float x, float ySup, float w,
     p.tipo=TipoPlat::Rampa; p.esGancheable=true; p.esPico=false;
     p.chunk=chunk; p.usaConvex=true; p.valido=true;
 
+    // Visual del triángulo/trapecio
     p.convVisual.setPointCount(4);
     p.convVisual.setPoint(0, {x,     yBase});
     p.convVisual.setPoint(1, {x + w, yBase});
@@ -427,11 +409,19 @@ void Mapa::agregarRampa(float x, float ySup, float w,
     p.convVisual.setOutlineColor(sf::Color(65,115,175,180));
     p.convVisual.setOutlineThickness(2.f);
 
-    // Física — trapecio con vértices relativos al centroide
+    // Física
+    // Para rampas de SUBIDA (hIzq==0): bajar el vértice físico derecho 3px.
+    // Elimina el "piquito" donde la cima de la rampa choca con el borde
+    // vertical de la plataforma siguiente. El visual no se toca.
+    static constexpr float MARGEN_SUBIDA = 3.f;
+    float yTopDerFis = (hIzq == 0.f && hDer > 0.f)
+                       ? yTopDer + MARGEN_SUBIDA   // subida: bajar cima derecha
+                       : yTopDer;                  // bajada: sin cambio
+
     b2Vec2 vW[4]; int nV = 0;
     vW[nV++] = {x,     yBase};
     if (hDer > 0.f) vW[nV++] = {x + w, yBase};
-    vW[nV++] = {x + w, yTopDer};
+    vW[nV++] = {x + w, yTopDerFis};
     if (hIzq > 0.f) vW[nV++] = {x,     yTopIzq};
 
     float cx = 0.f, cy = 0.f;
@@ -449,9 +439,12 @@ void Mapa::agregarRampa(float x, float ySup, float w,
     b2BodyDef bd = b2DefaultBodyDef(); bd.type = b2_staticBody;
     bd.position = {cx, cy};
     p.cuerpo = b2CreateBody(worldId, &bd);
-    b2ShapeDef sd = b2DefaultShapeDef(); sd.friction = 0.9f;
+    // Fricción alta: las rampas se comportan como plataforma normal, no resbalan
+    b2ShapeDef sd = b2DefaultShapeDef(); sd.friction = 1.8f;
     b2CreatePolygonShape(p.cuerpo, &sd, &poly);
     plataformas.push_back(p);
+
+    // Sin relleno debajo de la rampa (bloques de h fija, sin solapamiento con picos)
 
     // Línea de acento en la superficie inclinada
     Plataforma ln;
@@ -475,7 +468,6 @@ void Mapa::agregarPicos(float x, float y, float w, int cantidad, int chunk)
     float ad = w / (float)cantidad;
     float alt = 36.f;
 
-    // Base con hitbox de muerte
     {
         Plataforma base;
         base.tipo=TipoPlat::Pico; base.esPico=true; base.esGancheable=false;
@@ -493,7 +485,6 @@ void Mapa::agregarPicos(float x, float y, float w, int cantidad, int chunk)
         b2CreatePolygonShape(base.cuerpo, &sd, &box);
         plataformas.push_back(base);
     }
-    // Triángulos visuales
     for (int i = 0; i < cantidad; ++i) {
         float dx = x + i * ad;
         Plataforma pk;

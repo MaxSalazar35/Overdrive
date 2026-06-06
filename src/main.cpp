@@ -39,16 +39,11 @@ static bool accionConfirmar() {
         || sf::Joystick::isButtonPressed(1, BTN_A);
 }
 
-// ── Construye la lista de b2BodyId gancheables del mapa ──────
-static std::vector<b2BodyId> construirListaGancheables(Mapa& mapa)
+// ── Lista de gancheables (ya no se usa para filtrar — el gancho filtra por posición Y)
+// Se mantiene para compatibilidad. Pasar nullptr a setGancheables desactiva el filtro por lista.
+static std::vector<b2BodyId> construirListaGancheables(Mapa& /*mapa*/)
 {
-    std::vector<b2BodyId> lista;
-    for (auto& p : mapa.getPlataformas()) {
-        // Solo techos marcados explícitamente — no el suelo ni plataformas normales
-        if (p.valido && p.esTechoGancho)
-            lista.push_back(p.cuerpo);
-    }
-    return lista;
+    return {};  // Lista vacía: el gancho usa filtro por posición (y < 580) en su callback
 }
 
 int main()
@@ -64,10 +59,13 @@ int main()
     ventana.setKeyRepeatEnabled(false);
 
     // ── Música ───────────────────────────────────────────────
+    // Música: intentar sf::Music (streaming). Si falla OpenAL, no hay audio.
+    // El error 0x80070006 es del dispositivo Windows — no es un bug del código.
     sf::Music musica;
-    if (musica.openFromFile("assets/music/musica.ogg")) {
+    bool musicaOK = musica.openFromFile("assets/music/musica.ogg");
+    if (musicaOK) {
         musica.setLoop(true);
-        musica.setVolume(45.f);
+        musica.setVolume(50.f);
         musica.play();
     }
 

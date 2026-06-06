@@ -150,9 +150,9 @@ Distribuidas por el nivel, flotan y rotan. Al recogerlas otorgan un power-up (en
 
 ### 👥 Equipo
 
- **Integrantes**: 
-Arturo Maximiliano Salazar Sanchez (@MaxSalazar35) 
-Dafne Jackeline Reynoso Sauceda (@dafners)
+- **Líder**: Nombre Completo (@usuario-github)
+- **Integrante 2**: Nombre Completo (@usuario-github)
+- **Integrante 3**: Nombre Completo (@usuario-github)
 
 ---
 

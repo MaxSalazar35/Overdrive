@@ -229,19 +229,14 @@ salto_gancho:
     // ── Gancho ───────────────────────────────────────────────
     bool botonGancho = input.presionado(Accion::Gancho);
     if (botonGancho && !ganchoPresionado) {
-        // Dispara hacia arriba y adelante: -80° vertical (casi recto arriba)
-        // Si está en el aire, apunta más hacia el techo; en suelo, un poco adelante.
+        // Dispara recto hacia arriba (el gancho solo se ancla en el techo).
+        // mirandoDerecha controla el límite horizontal del alcance.
         constexpr float PI = 3.14159265f;
-        // Ángulo: -80° desde horizontal = casi recto arriba con ligera inclinación
-        // Ajustar según dirección del jugador
-        float angBase = -PI / 2.f;  // 90° hacia arriba
-        float inclinacion = mirandoDerecha ? 0.3f : -0.3f;  // leve sesgo adelante
-        float ang = angBase + inclinacion;
-        sf::Vector2f dir(std::cos(ang), std::sin(ang));
-        bool ok = gancho->disparar(dir);
+        sf::Vector2f dir(0.f, -1.f);  // recto arriba
+        bool ok = gancho->disparar(dir, mirandoDerecha);
         if (ok)
             particulas.emitir(gancho->getPuntoAnclaje(),
-                              TipoParticula::Chispa, sf::Color(255,220,80), 10);
+                              TipoParticula::Chispa, sf::Color(255,220,80), 12);
     }
     ganchoPresionado = botonGancho;
 }

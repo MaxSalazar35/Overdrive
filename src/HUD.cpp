@@ -200,8 +200,8 @@ void HUD::update(
                 sf::FloatRect sb = sprGanador.getLocalBounds();
                 sprGanador.setOrigin(sb.width/2.f, sb.height/2.f);
                 sprGanador.setPosition(anchoV * 0.28f, altoV * 0.50f);
-                float sc = std::min(s * 1.05f, 1.05f);
-                sprGanador.setScale(sc * 2.8f, sc * 2.8f);
+                // Escala fija — la imagen ya tiene el tamaño correcto desde mostrarFinJuego
+                (void)s; // sin bounce en la imagen, solo el texto lo tiene
             }
             // Texto a la derecha, centrado verticalmente
             textoVict.setPosition(anchoV * 0.65f, altoV * 0.38f);
@@ -254,9 +254,8 @@ void HUD::mostrarSobrevivio(int idSobreviviente)
     texGanadorCargada = false;
 
     std::string nombre = (idSobreviviente == 0) ? "JUGADOR 1" : "JUGADOR 2";
-    // sf::String::fromUtf8 con ó como UTF-8 (0xC3 0xB3)
-    std::string txtVict = nombre + "\nSOBREVIVI\xC3\xB3!";
-    textoVict.setString(sf::String::fromUtf8(txtVict.begin(), txtVict.end()));
+    // Sin acentos para evitar problemas de encoding
+    textoVict.setString(nombre + "\nGANA LA RONDA!");
     textoVict.setFillColor(colorJugador(idSobreviviente));
     textoSubVict.setString("Presiona Space o Enter para continuar");
 }
@@ -273,14 +272,17 @@ void HUD::mostrarFinJuego(int idGanador)
     textoVict.setFillColor(colorJugador(idGanador));
     textoSubVict.setString("Presiona Space o Enter para reiniciar");
 
-    std::string rutaImg = (idGanador == 0) ? "assets/images/jugador1.png"
-                                           : "assets/images/jugador2.png";
-    texGanadorCargada = texGanador.loadFromFile(rutaImg,
-        sf::IntRect(0, 0, 200, 220));
+    // Usar imágenes de victoria con fondo removido (Photoroom)
+    std::string rutaImg = (idGanador == 0)
+        ? "assets/images/jugador1victory-Photoroom.png"
+        : "assets/images/jugador2victory-Photoroom.png";
+    texGanadorCargada = texGanador.loadFromFile(rutaImg);
     if (texGanadorCargada) {
-        sprGanador.setTexture(texGanador);
-        sprGanador.setTextureRect(sf::IntRect(0, 0, 200, 220));
-        sprGanador.setScale(2.5f, 2.5f);
+        sprGanador.setTexture(texGanador, true);
+        // Imagen 1536x1024 → escalar para que quepa en ~40% de la pantalla de alto
+        sf::Vector2u sz = texGanador.getSize();
+        float escala = (altoV * 0.65f) / (float)sz.y;
+        sprGanador.setScale(escala, escala);
         sprGanador.setColor(sf::Color::White);
     }
 }
