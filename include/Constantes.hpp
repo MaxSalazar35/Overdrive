@@ -26,12 +26,12 @@ constexpr float JUG_ANCHO         = 40.0f;
 constexpr float JUG_ALTO          = 70.0f;
 
 // ── Gancho ───────────────────────────────────────────────────
-// Longitud del rayo diagonal (px). A ~30° alcanza el techo con buen sesgo hacia adelante.
+// Longitud del rayo diagonal (px). A 70° alcanza el techo desde cualquier plataforma.
 constexpr float GANCHO_LONGITUD       = 580.0f;
-// Ángulo del disparo en radianes desde horizontal (~30° = diagonal adelante-arriba)
-constexpr float GANCHO_ANGULO         = 0.52f;    // ~30° en rad (diagonal hacia adelante)
-// Sin filtro de Y — el gancho se ancla en cualquier superficie estática (techo y plataformas)
-// GANCHO_Y_MAX_CONTACTO eliminado: el jugador puede usar el gancho desde el suelo o el aire
+// Ángulo del disparo en radianes desde horizontal (70° = muy vertical pero con sesgo)
+constexpr float GANCHO_ANGULO         = 1.3963f;   // 80° en rad
+// Umbral Y máximo del punto de contacto (solo el techo continuo en y=0..20)
+constexpr float GANCHO_Y_MAX_CONTACTO = 25.0f;
 // Velocidad de retracción: px/s que se acorta la cuerda cada segundo
 constexpr float GANCHO_RETRACCION     = 280.0f;
 // Longitud mínima (el jugador queda a esta distancia del techo antes de soltarse)
