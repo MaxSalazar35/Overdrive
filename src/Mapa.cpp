@@ -410,18 +410,10 @@ void Mapa::agregarRampa(float x, float ySup, float w,
     p.convVisual.setOutlineThickness(2.f);
 
     // Física
-    // Para rampas de SUBIDA (hIzq==0): bajar el vértice físico derecho 3px.
-    // Elimina el "piquito" donde la cima de la rampa choca con el borde
-    // vertical de la plataforma siguiente. El visual no se toca.
-    static constexpr float MARGEN_SUBIDA = 3.f;
-    float yTopDerFis = (hIzq == 0.f && hDer > 0.f)
-                       ? yTopDer + MARGEN_SUBIDA   // subida: bajar cima derecha
-                       : yTopDer;                  // bajada: sin cambio
-
     b2Vec2 vW[4]; int nV = 0;
     vW[nV++] = {x,     yBase};
     if (hDer > 0.f) vW[nV++] = {x + w, yBase};
-    vW[nV++] = {x + w, yTopDerFis};
+    vW[nV++] = {x + w, yTopDer};
     if (hIzq > 0.f) vW[nV++] = {x,     yTopIzq};
 
     float cx = 0.f, cy = 0.f;
@@ -439,8 +431,7 @@ void Mapa::agregarRampa(float x, float ySup, float w,
     b2BodyDef bd = b2DefaultBodyDef(); bd.type = b2_staticBody;
     bd.position = {cx, cy};
     p.cuerpo = b2CreateBody(worldId, &bd);
-    // Fricción alta: las rampas se comportan como plataforma normal, no resbalan
-    b2ShapeDef sd = b2DefaultShapeDef(); sd.friction = 1.8f;
+    b2ShapeDef sd = b2DefaultShapeDef(); sd.friction = 0.9f;
     b2CreatePolygonShape(p.cuerpo, &sd, &poly);
     plataformas.push_back(p);
 

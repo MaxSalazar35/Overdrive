@@ -4,7 +4,7 @@
 // MECÁNICA:
 //  - Disparo diagonal: ángulo GANCHO_ANGULO (70°) hacia arriba-adelante
 //    según la dirección que mira el jugador. Sin límite horizontal.
-//  - Sin filtro de Y: se ancla en cualquier superficie estática bajo el rayo.
+//  - Solo se ancla en el techo continuo (y <= GANCHO_Y_MAX_CONTACTO = 25).
 //  - Al anclar: DistanceJoint como péndulo + impulso retráctil continuo
 //    que jala al jugador hacia el punto de anclaje (GANCHO_RETRACCION px/s).
 //  - Longitud mínima GANCHO_LONG_MIN: el jugador queda cerca del techo
@@ -13,21 +13,17 @@
 #include "Gancho.hpp"
 #include <cmath>
 
-// ── Raycast callback — cualquier superficie estática (no dinámica, no sensor) ──────
+// ── Raycast callback — SOLO techo (y <= GANCHO_Y_MAX_CONTACTO) ──────────
 static float raycastCallback(b2ShapeId shapeId, b2Vec2 point,
-                              b2Vec2 normal, float fraction, void* context)
+                              b2Vec2 /*normal*/, float fraction, void* context)
 {
     RaycastCtx* ctx = static_cast<RaycastCtx*>(context);
     if (b2Shape_IsSensor(shapeId)) return -1.f;
     b2BodyId bodyId = b2Shape_GetBody(shapeId);
     if (b2Body_GetType(bodyId) == b2_dynamicBody) return -1.f;
 
-    // Doble filtro para anclar SOLO en el techo continuo (y=0..20):
-    //  1. normal.y < -0.5 → cara superior (elimina paredes y suelos)
-    //  2. point.y < 30    → muy cerca del borde superior de la ventana (elimina
-    //                       rampas y plataformas, que están en y >= 200)
-    if (normal.y > -0.5f) return -1.f;   // no es cara superior
-    if (point.y  > 30.f)  return -1.f;   // no es el techo continuo
+    // Solo el techo continuo (y = 0..20)
+    if (point.y > GANCHO_Y_MAX_CONTACTO) return -1.f;
 
     ctx->golpeo         = true;
     ctx->puntoContacto  = point;
