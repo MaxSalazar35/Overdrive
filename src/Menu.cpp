@@ -64,7 +64,7 @@ void Menu::registrarPersonajes() {
         {
             "Axel \"VANDAL\" Reyes", "VANDAL",
             "assets/images/vandal.png", "assets/images/vandal_victory.png",
-            "El Rockero Temerario.\nCorre por la gloria y el ruido.\nSu armadura roja lleva cada choque como una medalla.",
+            "El Rockero Temerario.\nCorre por la gloria y el ruido.\nSu armadura roja lleva cada choque como si fuera una medalla.",
             sf::Color(220, 40, 60)
         },
         {
