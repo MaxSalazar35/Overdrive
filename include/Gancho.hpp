@@ -5,23 +5,22 @@
 #include "Constantes.hpp"
 
 // ============================================================
-// Gancho.hpp — Overdrive (Box2D v3)
+// Gancho.hpp — Overdrive (Box2D v3)  v2
 //
 // MECÁNICA:
-//  - Disparo diagonal a 70° hacia arriba-adelante según dirección del jugador.
-//    Solo se ancla en el techo continuo (y <= GANCHO_Y_MAX_CONTACTO).
-//    Sin límite horizontal — el ángulo y la longitud del rayo lo delimitan.
-//
-//  - Retráctil: al anclar, aplica impulso continuo hacia el punto de anclaje
-//    (GANCHO_RETRACCION px/s). El joint de distancia controla el péndulo.
-//
-//  - Soltar: el jugador sale disparado con la velocidad acumulada.
+//  - Ángulo de disparo depende de la velocidad horizontal:
+//      lento → 85° (casi vertical), rápido → 45° (diagonal)
+//  - Acepta cualquier superficie estática con cara superior
+//    en la mitad superior de la pantalla (techo + plataformas altas).
+//  - Tres rayos de fallback para maximizar las chances de enganche.
+//  - Joint de distancia = péndulo; retracción activa por impulso.
 // ============================================================
 
 enum class EstadoGancho { Inactivo, Anclado };
 
 struct RaycastCtx {
     bool         golpeo        = false;
+    float        fraccionMin   = 1.f;    // para tomar el punto más cercano
     b2Vec2       puntoContacto = {0.f, 0.f};
     b2BodyId     cuerpoGolpeado = {};
     const std::vector<b2BodyId>* gancheables = nullptr;
