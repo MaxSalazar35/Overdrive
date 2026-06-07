@@ -64,6 +64,10 @@ private:
     bool          finJuego      = false;
     float         timerVictoria = 0.f;
     float         escalaVict    = 0.f;
+    float         tiempoTotal   = 0.f;   // para animaciones (pulso gancho, etc.)
+
+    // Hint de ESC (esquina inferior central)
+    sf::Text      textoEsc;
     sf::RectangleShape fondoOsc;
     sf::Text           textoVict;
     sf::Text           textoSubVict;
