@@ -35,7 +35,9 @@ static const float DESLIZ_FRICCION  = 0.03f;
 static const float DESLIZ_VEL_MIN   = 10.f;
 
 Jugador::Jugador(b2WorldId worldId, sf::Vector2f pos,
-                 int id, SistemaParticulas& parts)
+                 int id, SistemaParticulas& parts,
+                 const std::string& rutaSprite,
+                 sf::Color colorPj)
     : id(id), estado(EstadoJug::Cayendo), estadoAnterior(EstadoJug::Cayendo),
       enSuelo(false), mirandoDerecha(true),
       tiempoSinSuelo(0.f), ganchoPresionado(false),
@@ -45,16 +47,19 @@ Jugador::Jugador(b2WorldId worldId, sf::Vector2f pos,
       saltando(false), puedesSaltar(false),
       timerSalto(0.f), cooldownSalto(0.f),
       deslizBoostAplicado(false),
-      worldId(worldId), input(id), particulas(parts)
+      worldId(worldId), input(id), colorPersonaje(colorPj),
+      particulas(parts)
 {
     anim.configurar(FW, FH);
     anim.agregarEstado(ANIM_IDLE,     {0, 4, 0.18f, true});
     anim.agregarEstado(ANIM_CORRER,   {1, 6, 0.09f, true});
-    anim.agregarEstado(ANIM_SALTAR,   {2, 4, 0.12f, false}); // loop=false: avanza y para
+    anim.agregarEstado(ANIM_SALTAR,   {2, 4, 0.12f, false});
     anim.agregarEstado(ANIM_DESLIZAR, {3, 2, 0.15f, true});
 
-    std::string ruta = (id == 0) ? "assets/images/jugador1.png"
-                                 : "assets/images/jugador2.png";
+    // Usar la ruta pasada; si está vacía usar el default por id
+    std::string ruta = rutaSprite.empty()
+        ? (id == 0 ? "assets/images/vandal.png" : "assets/images/cobalt.png")
+        : rutaSprite;
     if (!textura.loadFromFile(ruta))
         std::cerr << "[Jugador] No se cargo " << ruta << "\n";
 
@@ -229,10 +234,8 @@ salto_gancho:
     // ── Gancho ───────────────────────────────────────────────
     bool botonGancho = input.presionado(Accion::Gancho);
     if (botonGancho && !ganchoPresionado) {
-        // Dispara recto hacia arriba (el gancho solo se ancla en el techo).
-        // mirandoDerecha controla el límite horizontal del alcance.
-        constexpr float PI = 3.14159265f;
-        sf::Vector2f dir(0.f, -1.f);  // recto arriba
+        // El ángulo se calcula internamente en Gancho según la velocidad actual.
+        sf::Vector2f dir(0.f, -1.f);
         bool ok = gancho->disparar(dir, mirandoDerecha);
         if (ok)
             particulas.emitir(gancho->getPuntoAnclaje(),
@@ -279,8 +282,7 @@ void Jugador::update(float dt)
     b2Vec2 vel = b2Body_GetLinearVelocity(cuerpo);
     if (std::abs(vel.x) > 280.f
         && relojEstela.getElapsedTime().asSeconds() > 0.05f) {
-        sf::Color c = id == 0 ? sf::Color(80,180,255,140)
-                              : sf::Color(255,100,60,140);
+        sf::Color c = colorPersonaje; c.a = 140;
         particulas.emitir(getPosicion(), TipoParticula::Estela, c, 2);
         relojEstela.restart();
     }
@@ -291,8 +293,7 @@ void Jugador::draw(sf::RenderWindow& ventana)
 {
     if (estado == EstadoJug::Muerto) return;
 
-    sf::Color cc = id == 0 ? sf::Color(80,200,255,200)
-                           : sf::Color(255,100,80,200);
+    sf::Color cc = colorPersonaje; cc.a = 200;
     gancho->draw(ventana, cc);
 
     b2Vec2 pos = b2Body_GetPosition(cuerpo);
@@ -307,8 +308,8 @@ void Jugador::draw(sf::RenderWindow& ventana)
         sf::RectangleShape box({40.f, 70.f});
         box.setOrigin(20.f, 35.f);
         box.setPosition(pos.x, pos.y);
-        box.setFillColor(id == 0 ? sf::Color(80,160,255,200)
-                                 : sf::Color(255,80,80,200));
+        sf::Color boxColor = colorPersonaje; boxColor.a = 200;
+        box.setFillColor(boxColor);
         box.setOutlineColor(sf::Color::White);
         box.setOutlineThickness(2.f);
         ventana.draw(box);
