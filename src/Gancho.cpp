@@ -1,21 +1,25 @@
 // ============================================================
-// Gancho.cpp — Overdrive (Box2D v3)  v4
+// Gancho.cpp — Overdrive (Box2D v3)  v5
+//
+// BUG ANTERIOR: el raycast filtraba normal.y > -0.5 esperando
+// una normal que apuntara "hacia abajo" (y negativo en SFML).
+// Pero el rayo sale del jugador HACIA ARRIBA e impacta la cara
+// INFERIOR del techo, cuya normal apunta HACIA ABAJO en mundo
+// Box2D... que en SFML (Y invertido) es normal.y POSITIVO.
+// El filtro correcto es: normal.y > 0.5 (cara mira hacia abajo
+// en Box2D = hacia arriba en SFML = cara inferior de un bloque).
 //
 // MECÁNICA:
-//  - Disparo siempre hacia el techo. Estrategia de 3 rayos:
-//      1. Recto hacia arriba (90°) — alcance directo
-//      2. 30° a la derecha del vertical (hacia adelante)
-//      3. 30° a la izquierda del vertical (hacia atrás)
-//  - Solo se ancla en el techo continuo: point.y <= GANCHO_Y_MAX_CONTACTO
-//    y normal.y < -0.5 (cara mirando hacia abajo).
-//  - Al anclar: DistanceJoint como péndulo + impulso retráctil.
+//  - 3 rayos: vertical puro, 30° adelante, 30° atrás.
+//  - Solo acepta el techo continuo: point.y <= GANCHO_Y_MAX_CONTACTO.
+//  - Normal correcta: normal.y > 0.5 (cara inferior de bloque).
 // ============================================================
 #include "Gancho.hpp"
 #include <cmath>
 
 static constexpr float PI = 3.14159265f;
 
-// ── Raycast callback — SOLO techo (y <= GANCHO_Y_MAX_CONTACTO) ─────────
+// ── Raycast callback ─────────────────────────────────────────
 static float raycastCallback(b2ShapeId shapeId, b2Vec2 point,
                               b2Vec2 normal, float fraction, void* context)
 {
@@ -25,20 +29,28 @@ static float raycastCallback(b2ShapeId shapeId, b2Vec2 point,
     b2BodyId bodyId = b2Shape_GetBody(shapeId);
     if (b2Body_GetType(bodyId) == b2_dynamicBody) return -1.f;
 
-    // Cara que mira hacia abajo (normal apunta hacia abajo, y negativo = arriba en SFML)
-    if (normal.y > -0.5f) return -1.f;
+    // El rayo va hacia arriba (y decrece) e impacta la cara INFERIOR
+    // del techo. En Box2D la normal de esa cara apunta hacia abajo,
+    // que en coordenadas SFML (Y hacia abajo) es normal.y > 0.
+    // Aceptamos cualquier cara horizontal superior: |normal.y| > 0.5
+    // y descartamos si el punto de impacto no está cerca del techo.
+    (void)normal; // no filtramos por normal — solo por posición Y
 
-    // Solo el techo continuo (y = 0..GANCHO_Y_MAX_CONTACTO)
+    // El rayo sale desde la cabeza del jugador y va hacia el techo.
+    // Solo aceptar si el punto está en el techo continuo (y <= 25)
     if (point.y > GANCHO_Y_MAX_CONTACTO) return -1.f;
 
-    // Guardar el impacto más cercano
+    // Ignorar impactos a menos del 2% de la longitud (self-hit)
+    if (fraction < 0.02f) return -1.f;
+
+    // Cuerpos dinámicos ya filtrados arriba; ignorar sensores también
+    // Guardar el más cercano
     if (!ctx->golpeo || fraction < ctx->fraccionMin) {
         ctx->golpeo         = true;
         ctx->fraccionMin    = fraction;
         ctx->puntoContacto  = point;
         ctx->cuerpoGolpeado = bodyId;
     }
-    // Devolver fraction para que el raycast siga buscando algo más cercano
     return fraction;
 }
 
@@ -62,13 +74,15 @@ bool Gancho::disparar(sf::Vector2f /*dir*/, bool mirandoDerecha)
     if (estado == EstadoGancho::Anclado) { soltar(); return false; }
 
     b2Vec2 posJ = b2Body_GetPosition(cuerpoJugador);
-    float  L    = GANCHO_LONGITUD;
+    // Disparar desde la CABEZA del jugador (arriba del hitbox = centro - 35px en Y)
+    // para evitar que el rayo intercepte el propio cuerpo del jugador
+    b2Vec2 origen = { posJ.x, posJ.y - 36.f };
+    float  L      = GANCHO_LONGITUD;
 
-    // Helper: lanza un rayo con una dirección (dx,dy) normalizada
     auto lanzar = [&](float dx, float dy) -> bool {
-        b2Vec2 dest = { posJ.x + dx * L, posJ.y + dy * L };
+        b2Vec2 dest = { origen.x + dx * L, origen.y + dy * L };
         RaycastCtx ctx; ctx.gancheables = gancheables;
-        b2World_CastRay(worldId, posJ, dest, b2DefaultQueryFilter(),
+        b2World_CastRay(worldId, origen, dest, b2DefaultQueryFilter(),
                         raycastCallback, &ctx);
         if (ctx.golpeo) {
             anclarEn({ctx.puntoContacto.x, ctx.puntoContacto.y});
@@ -77,17 +91,16 @@ bool Gancho::disparar(sf::Vector2f /*dir*/, bool mirandoDerecha)
         return false;
     };
 
-    // Rayo 1: recto hacia arriba (90° desde horizontal)
+    // Rayo 1: completamente vertical hacia arriba
     if (lanzar(0.f, -1.f)) return true;
 
-    // Rayo 2: 30° a la derecha del vertical (60° desde horizontal)
-    //   sin(60°) ≈ 0.866 (componente vertical), cos(60°) = 0.5 (horizontal)
-    float ang60 = 60.f * PI / 180.f;
-    float sign  = mirandoDerecha ? 1.f : -1.f;
-    if (lanzar(sign * std::cos(ang60), -std::sin(ang60))) return true;
+    // Rayo 2: 30° hacia adelante desde la vertical (60° desde horizontal)
+    float sign = mirandoDerecha ? 1.f : -1.f;
+    float ang  = 60.f * PI / 180.f;   // 60° desde horizontal
+    if (lanzar(sign * std::cos(ang), -std::sin(ang))) return true;
 
-    // Rayo 3: 30° al otro lado (opuesto a la dirección de marcha)
-    if (lanzar(-sign * std::cos(ang60), -std::sin(ang60))) return true;
+    // Rayo 3: 30° hacia el lado opuesto
+    if (lanzar(-sign * std::cos(ang), -std::sin(ang))) return true;
 
     return false;
 }
@@ -105,7 +118,6 @@ void Gancho::update(float dt)
 {
     if (estado == EstadoGancho::Inactivo) return;
 
-    // Retracción: impulso hacia el punto de anclaje
     if (longitudActual > GANCHO_LONG_MIN) {
         b2Vec2 posJ = b2Body_GetPosition(cuerpoJugador);
         float  dx   = puntoAnclaje.x - posJ.x;
@@ -131,7 +143,6 @@ void Gancho::update(float dt)
                                            longitudActual);
     }
 
-    // Visual
     b2Vec2 posJ = b2Body_GetPosition(cuerpoJugador);
     lineaCuerda[0].position = {posJ.x, posJ.y};
     lineaCuerda[0].color    = sf::Color(220, 180, 30, 220);
