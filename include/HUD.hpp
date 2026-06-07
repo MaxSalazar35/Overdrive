@@ -7,6 +7,13 @@ class HUD {
 public:
     HUD(sf::RenderWindow& ventana);
 
+    // Configura el color, nombre e imagen de victoria de cada jugador
+    // según el personaje elegido. Llamar ANTES del primer update.
+    void configurarPersonaje(int idJugador,
+                             sf::Color color,
+                             const std::string& nombreAlias,
+                             const std::string& rutaVictory);
+
     void update(
         const std::vector<float>& velocidades,
         const std::vector<bool>&  ganchosActivos,
@@ -67,4 +74,11 @@ private:
 
     sf::Color colorJugador(int id) const;
     void      inicializarPaneles(const std::vector<int>& vidasIniciales);
+
+    // Configuración por personaje elegido
+    sf::Color   coloresPersonaje[2] = { sf::Color(80,180,255), sf::Color(255,90,70) };
+    std::string nombresPersonaje[2] = { "VANDAL", "COBALT" };
+    std::string rutasVictory[2]     = { "assets/images/vandal_victory.png",
+                                        "assets/images/cobalt_victory.png" };
+    int ganadorActual = -1;
 };

@@ -73,7 +73,7 @@ void HUD::inicializarPaneles(const std::vector<int>& vidasIniciales)
         p.textoNombre.setFont(fuente);
         p.textoNombre.setCharacterSize(22);
         p.textoNombre.setFillColor(cj);
-        p.textoNombre.setString(i == 0 ? "JUGADOR 1" : "JUGADOR 2");
+        p.textoNombre.setString(nombresPersonaje[i]);
         p.textoNombre.setPosition(xBase + 10.f, yBase + 6.f);
 
         // ── Velocidad numérica ───────────────────────────────
@@ -197,14 +197,15 @@ void HUD::update(
         if (finJuego) {
             // Imagen del ganador a la izquierda, texto a la derecha
             if (texGanadorCargada) {
-                sf::FloatRect sb = sprGanador.getLocalBounds();
-                sprGanador.setOrigin(sb.width/2.f, sb.height/2.f);
-                sprGanador.setPosition(anchoV * 0.28f, altoV * 0.50f);
-                // Escala fija — la imagen ya tiene el tamaño correcto desde mostrarFinJuego
-                (void)s; // sin bounce en la imagen, solo el texto lo tiene
+                float imgH = sprGanador.getLocalBounds().height * sprGanador.getScale().y;
+                sprGanador.setOrigin(0.f, 0.f);
+                sprGanador.setPosition(
+                    anchoV * 0.06f,
+                    (altoV - imgH) * 0.5f
+                );
             }
-            // Texto a la derecha, centrado verticalmente
-            textoVict.setPosition(anchoV * 0.65f, altoV * 0.38f);
+            // Texto a la derecha
+            textoVict.setPosition(anchoV * 0.67f, altoV * 0.35f);
         } else {
             textoVict.setPosition(anchoV/2.f, altoV * 0.42f);
         }
@@ -245,6 +246,30 @@ void HUD::draw(sf::RenderWindow& ventana)
     }
 }
 
+void HUD::configurarPersonaje(int idJugador, sf::Color color,
+                               const std::string& nombreAlias,
+                               const std::string& rutaVictory)
+{
+    if (idJugador < 0 || idJugador > 1) return;
+    coloresPersonaje[idJugador] = color;
+    nombresPersonaje[idJugador] = nombreAlias;
+    rutasVictory[idJugador]     = rutaVictory;
+
+    // Actualizar el panel ya inicializado
+    if (idJugador < (int)paneles.size()) {
+        paneles[idJugador].textoNombre.setString(nombreAlias);
+        paneles[idJugador].textoNombre.setFillColor(color);
+        paneles[idJugador].borde.setOutlineColor(color);
+        paneles[idJugador].barraVel.setFillColor(color);
+        paneles[idJugador].iconoGancho.setOutlineColor(color);
+        paneles[idJugador].corona.setFillColor(color);
+        for (auto& c : paneles[idJugador].circulosVida) {
+            c.setFillColor(color);
+            c.setOutlineColor(color);
+        }
+    }
+}
+
 void HUD::mostrarSobrevivio(int idSobreviviente)
 {
     animVictoria  = true;
@@ -253,9 +278,9 @@ void HUD::mostrarSobrevivio(int idSobreviviente)
     escalaVict    = 0.f;
     texGanadorCargada = false;
 
-    std::string nombre = (idSobreviviente == 0) ? "JUGADOR 1" : "JUGADOR 2";
-    // Sin acentos para evitar problemas de encoding
-    textoVict.setString(nombre + "\nGANA LA RONDA!");
+    std::string alias = (idSobreviviente >= 0 && idSobreviviente < 2)
+        ? nombresPersonaje[idSobreviviente] : "JUGADOR";
+    textoVict.setString(alias + "\nGANA LA RONDA!");
     textoVict.setFillColor(colorJugador(idSobreviviente));
     textoSubVict.setString("Presiona Space o Enter para continuar");
 }
@@ -266,22 +291,27 @@ void HUD::mostrarFinJuego(int idGanador)
     finJuego      = true;
     timerVictoria = 0.f;
     escalaVict    = 0.f;
+    ganadorActual = idGanador;
 
-    std::string nombre = (idGanador == 0) ? "JUGADOR 1" : "JUGADOR 2";
-    textoVict.setString("!" + nombre + "\nGANA EL JUEGO!");
+    std::string alias = (idGanador >= 0 && idGanador < 2)
+        ? nombresPersonaje[idGanador] : "JUGADOR";
+
+    // Signo de apertura correcto: caracter unicode U+00A1 en UTF-8
+    textoVict.setString(alias + "\nGANA EL JUEGO!");
     textoVict.setFillColor(colorJugador(idGanador));
-    textoSubVict.setString("Presiona Space o Enter para reiniciar");
+    textoSubVict.setString("SPACE/ENTER: Revancha  |  ESC: Elegir personaje");
 
-    // Usar imágenes de victoria con fondo removido (Photoroom)
-    std::string rutaImg = (idGanador == 0)
-        ? "assets/images/jugador1victory-Photoroom.png"
-        : "assets/images/jugador2victory-Photoroom.png";
-    texGanadorCargada = texGanador.loadFromFile(rutaImg);
+    // Cargar la imagen de victoria del personaje elegido
+    std::string ruta = (idGanador >= 0 && idGanador < 2)
+        ? rutasVictory[idGanador]
+        : "assets/images/vandal_victory.png";
+
+    texGanadorCargada = texGanador.loadFromFile(ruta);
     if (texGanadorCargada) {
         sprGanador.setTexture(texGanador, true);
-        // Imagen 1536x1024 → escalar para que quepa en ~40% de la pantalla de alto
         sf::Vector2u sz = texGanador.getSize();
-        float escala = (altoV * 0.65f) / (float)sz.y;
+        // Escala para que ocupe ~80% del alto de pantalla
+        float escala = (altoV * 0.82f) / (float)sz.y;
         sprGanador.setScale(escala, escala);
         sprGanador.setColor(sf::Color::White);
     }
@@ -295,5 +325,6 @@ void HUD::ocultarVictoria() {
 }
 
 sf::Color HUD::colorJugador(int id) const {
-    return id == 0 ? sf::Color(80, 180, 255) : sf::Color(255, 90, 70);
+    if (id >= 0 && id < 2) return coloresPersonaje[id];
+    return sf::Color(80, 180, 255);
 }
