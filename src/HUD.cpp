@@ -43,6 +43,16 @@ HUD::HUD(sf::RenderWindow& ventana)
     textoSubVict.setString("Presiona Space o Enter para continuar");
 
     sprGanador.setScale(2.5f, 2.5f);
+
+    // Hint de ESC centrado abajo
+    textoEsc.setFont(fuente);
+    textoEsc.setCharacterSize(14);
+    textoEsc.setFillColor(sf::Color(80, 90, 120));
+    textoEsc.setString("ESC = PAUSA");
+    textoEsc.setLetterSpacing(2.f);
+    sf::FloatRect eb = textoEsc.getLocalBounds();
+    textoEsc.setOrigin(eb.left + eb.width * 0.5f, eb.top);
+    textoEsc.setPosition(anchoV * 0.5f, altoV - 22.f);
 }
 
 void HUD::inicializarPaneles(const std::vector<int>& vidasIniciales)
@@ -136,6 +146,7 @@ void HUD::update(
     const std::vector<int>&   vidas,
     int idLider, float dt)
 {
+    tiempoTotal += dt;
     const float VEL_MAX_VIS = 400.f;
 
     for (int i = 0; i < numJugadores && i < (int)paneles.size(); ++i) {
@@ -160,10 +171,21 @@ void HUD::update(
             paneles[i].barraVel.setFillColor(cj);
         }
 
-        // Gancho
-        paneles[i].iconoGancho.setFillColor(
-            ganchosActivos[i] ? sf::Color(255, 220, 80) : sf::Color(30, 30, 50)
-        );
+        // Gancho — pulso cuando activo
+        bool ganchoOn = i < (int)ganchosActivos.size() && ganchosActivos[i];
+        if (ganchoOn) {
+            float pulso = 0.55f + 0.45f * std::sin(tiempoTotal * 10.f);
+            sf::Uint8 br = (sf::Uint8)(200 + 55 * pulso);
+            paneles[i].iconoGancho.setFillColor(sf::Color(br, (sf::Uint8)(br * 0.85f), 30));
+            paneles[i].iconoGancho.setOutlineColor(sf::Color(255, 255, 100));
+            paneles[i].iconoGancho.setOutlineThickness(3.f);
+            paneles[i].textoGancho.setFillColor(sf::Color(255, 230, 60));
+        } else {
+            paneles[i].iconoGancho.setFillColor(sf::Color(30, 30, 50));
+            paneles[i].iconoGancho.setOutlineColor(sf::Color(100, 100, 130));
+            paneles[i].iconoGancho.setOutlineThickness(1.5f);
+            paneles[i].textoGancho.setFillColor(sf::Color(80, 80, 100));
+        }
 
         // Vidas
         int v = (i < (int)vidas.size()) ? vidas[i] : 0;
@@ -236,6 +258,10 @@ void HUD::draw(sf::RenderWindow& ventana)
         for (auto& c : paneles[i].circulosVida) ventana.draw(c);
         ventana.draw(paneles[i].corona);
     }
+
+    // Hint de ESC solo durante el juego (no en pantalla de victoria)
+    if (!animVictoria)
+        ventana.draw(textoEsc);
 
     if (animVictoria) {
         ventana.draw(fondoOsc);
