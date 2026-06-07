@@ -13,7 +13,7 @@ SRC_DIR := src
 OBJ_DIR := obj
 BIN_DIR := bin
 
-TARGET := $(BIN_DIR)/JuegoProyecto252.exe
+TARGET := $(BIN_DIR)/Overdrive.exe
 
 SRC_FILES := $(wildcard $(SRC_DIR)/*.cpp)
 OBJ_FILES := $(patsubst $(SRC_DIR)/%.cpp, $(OBJ_DIR)/%.o, $(SRC_FILES))
