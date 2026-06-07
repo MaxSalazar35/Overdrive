@@ -1,13 +1,5 @@
 // ============================================================
-// main.cpp — Overdrive (Box2D v3)
-// Novedades v4 (menú):
-//   - Menú principal con Play / Cómo Jugar / Ajustes / Salir
-//   - Selección de personaje por jugador con lore
-//   - Cajas del jugador frena al tocarlas (no bloquean)
-//   - Picos en el mapa matan al jugador
-//   - Gancho solo en superficies marcadas
-//   - Desliz en bajada agrega impulso
-//   - HUD con nombre, velocidad en Rajdhani-Bold
+// main.cpp — Overdrive v10
 // ============================================================
 #include <SFML/Graphics.hpp>
 #include <SFML/Audio.hpp>
@@ -26,14 +18,14 @@
 #include "HUD.hpp"
 #include "Particulas.hpp"
 #include "Menu.hpp"
+#include "Countdown.hpp"
+#include "Pausa.hpp"
 
-static const int   VIDAS_INICIALES  = 3;
-static const float GRACIA_INICIO    = 1.2f;
+static const int   VIDAS_INICIALES = 3;
+static const float GRACIA_INICIO   = 1.2f;
+static const float CAJA_FRENO      = 0.55f;
 
-// Cuánto se frena al tocar una caja del jugador (factor por frame)
-static const float CAJA_FRENO       = 0.55f;
-
-enum class Estado { Jugando, EntreRespawn, FinJuego };
+enum class Estado { Conteo, Jugando, Pausado, EntreRespawn, FinJuego };
 
 static bool accionConfirmar() {
     return sf::Keyboard::isKeyPressed(sf::Keyboard::Return)
@@ -42,12 +34,7 @@ static bool accionConfirmar() {
         || sf::Joystick::isButtonPressed(1, BTN_A);
 }
 
-// ── Lista de gancheables (ya no se usa para filtrar — el gancho filtra por posición Y)
-// Se mantiene para compatibilidad. Pasar nullptr a setGancheables desactiva el filtro por lista.
-static std::vector<b2BodyId> construirListaGancheables(Mapa& /*mapa*/)
-{
-    return {};  // Lista vacía: el gancho usa filtro por posición (y < 580) en su callback
-}
+static std::vector<b2BodyId> construirListaGancheables(Mapa&) { return {}; }
 
 int main()
 {
@@ -55,94 +42,180 @@ int main()
 
     sf::RenderWindow ventana(
         sf::VideoMode(ANCHO_VENTANA, ALTO_VENTANA),
-        "Overdrive",
-        sf::Style::Close | sf::Style::Titlebar
-    );
+        "Overdrive", sf::Style::Close | sf::Style::Titlebar);
     ventana.setFramerateLimit(FPS_LIMITE);
     ventana.setKeyRepeatEnabled(false);
 
-    // ── Música ───────────────────────────────────────────────
     sf::Music musica;
     bool musicaOK = musica.openFromFile("assets/music/musica.ogg");
-    if (musicaOK) {
-        musica.setLoop(true);
-        musica.setVolume(50.f);
-        musica.play();
-    }
+    if (musicaOK) { musica.setLoop(true); musica.setVolume(50.f); musica.play(); }
 
     // ── MENÚ PRINCIPAL ────────────────────────────────────────
     Menu menu(ventana, musica);
     ResultadoMenu resMenu = menu.ejecutar();
+    if (resMenu.salir || !ventana.isOpen()) return 0;
 
-    if (resMenu.salir || !ventana.isOpen())
-        return 0;
+    // ── Recursos compartidos (viven toda la sesión) ───────────
+    SistemaParticulas particulas;
+    Camara            camara(3840.f * 4, (float)ALTO_VENTANA);
+    HUD               hud(ventana);
+    Countdown         countdown(ventana);
 
-    // ── Box2D v3 ─────────────────────────────────────────────
-    b2WorldDef wd = b2DefaultWorldDef();
-    wd.gravity    = {0.f, GRAVEDAD};
+    sf::Font fuentePausa;
+    if (!fuentePausa.loadFromFile("assets/fonts/Rajdhani-Bold.ttf"))
+        fuentePausa.loadFromFile("assets/fonts/Ring.ttf");
+    bool musicaMuteada = false;
+    Pausa pausa(ventana, musica, fuentePausa);
+
+    // Datos de personajes elegidos (persisten entre partidas del mismo run)
+    DatosPersonajeElegido datosJugador[2] = { resMenu.datosJ1, resMenu.datosJ2 };
+
+    // ── Estado del juego ──────────────────────────────────────
+    b2WorldDef wd  = b2DefaultWorldDef();
+    wd.gravity     = {0.f, GRAVEDAD};
     b2WorldId worldId = b2CreateWorld(&wd);
 
-    // ── Sistemas ─────────────────────────────────────────────
-    SistemaParticulas particulas;
-    Mapa   mapa(worldId);
-    Camara camara(mapa.getAncho(), mapa.getAlto());
-    HUD    hud(ventana);
+    // Punteros opcionales — se crean/destruyen en cada partida
+    std::unique_ptr<Mapa>   mapa;
+    std::vector<std::unique_ptr<Jugador>> jugadores;
+    std::vector<b2BodyId>   listaGancheables;
 
-    // ── Lista de bodies gancheables (se reconstruye si cambia el mapa) ──
-    std::vector<b2BodyId> listaGancheables = construirListaGancheables(mapa);
-
-    // ── Estado de vidas ──────────────────────────────────────
     std::vector<int>  vidas     = {VIDAS_INICIALES, VIDAS_INICIALES};
     std::vector<bool> vivoAntes = {true, true};
-    float timerGracia = GRACIA_INICIO;
+    float timerGracia  = GRACIA_INICIO;
+    float timerPausa   = 0.f;
+    bool  confirmarPress = false;
+    int   ganadorFinal   = -1;
 
-    auto crearJugadores = [&]() {
-        std::vector<std::unique_ptr<Jugador>> jgs;
-        jgs.push_back(std::make_unique<Jugador>(
-            worldId, mapa.spawnJugador(0, 0.f), 0, particulas));
-        jgs.push_back(std::make_unique<Jugador>(
-            worldId, mapa.spawnJugador(1, 0.f), 1, particulas));
-        // Registrar lista de gancheables en cada gancho
-        for (auto& j : jgs)
-            j->gancho->setGancheables(&listaGancheables);
-        vivoAntes   = {true, true};
-        timerGracia = GRACIA_INICIO;
-        camara.resetearAlInicio();
-        return jgs;
-    };
-
-    auto respawnearJugadores = [&](std::vector<std::unique_ptr<Jugador>>& jgs) {
-        float camX = camara.getCentro().x;
-        for (int i = 0; i < (int)jgs.size(); ++i)
-            jgs[i]->resetear(mapa.spawnJugador(i, camX));
-        vivoAntes   = {true, true};
-        timerGracia = GRACIA_INICIO;
-    };
-
-    auto jugadores = crearJugadores();
-
-    Estado estadoJuego    = Estado::Jugando;
-    float  timerPausa     = 0.f;
-    bool   confirmarPress = false;
-    int    ganadorFinal   = -1;
-
+    Estado estadoJuego = Estado::Conteo;
     sf::Clock reloj;
     float acumulador = 0.f;
-
-    // ── Timer para reconstruir lista de gancheables ──────────
     float timerActualizaGancheables = 0.f;
 
+    // ── Función de reinicio limpio ────────────────────────────
+    // Orden correcto: destruir jugadores → destruir mapa → destruir mundo
+    //                 → crear mundo → crear mapa → crear jugadores
+    auto reiniciarPartida = [&]() {
+        // 1. Soltar ganchos y destruir jugadores primero
+        jugadores.clear();          // llama a ~Jugador que destruye bodies/joints
+        listaGancheables.clear();
+
+        // 2. Destruir el mapa (sus bodies ya están en el mundo que aún existe)
+        mapa.reset();               // llama ~Mapa → destruirFisicas() sobre mundo vivo
+
+        // 3. Ahora sí destruir el mundo (ya sin bodies huérfanos)
+        b2DestroyWorld(worldId);
+
+        // 4. Crear mundo nuevo
+        worldId = b2CreateWorld(&wd);
+
+        // 5. Crear mapa nuevo
+        mapa = std::make_unique<Mapa>(worldId);
+
+        // 6. Resetear sistemas
+        particulas.limpiar();
+        camara.resetearAlInicio();
+        vidas      = {VIDAS_INICIALES, VIDAS_INICIALES};
+        vivoAntes  = {true, true};
+        timerGracia = GRACIA_INICIO;
+        ganadorFinal = -1;
+        hud.ocultarVictoria();
+
+        // 7. Crear jugadores con personajes elegidos
+        jugadores.push_back(std::make_unique<Jugador>(
+            worldId, mapa->spawnJugador(0, 0.f), 0, particulas,
+            datosJugador[0].sprite, datosJugador[0].color));
+        jugadores.push_back(std::make_unique<Jugador>(
+            worldId, mapa->spawnJugador(1, 0.f), 1, particulas,
+            datosJugador[1].sprite, datosJugador[1].color));
+        for (auto& j : jugadores)
+            j->gancho->setGancheables(&listaGancheables);
+
+        countdown.iniciar();
+        estadoJuego = Estado::Conteo;
+    };
+
+    // Configurar HUD con personajes del menú
+    auto aplicarPersonajesAlHUD = [&]() {
+        hud.configurarPersonaje(0,
+            datosJugador[0].color,
+            datosJugador[0].alias.empty()   ? "VANDAL" : datosJugador[0].alias,
+            datosJugador[0].victory.empty() ? "assets/images/vandal_victory.png" : datosJugador[0].victory);
+        hud.configurarPersonaje(1,
+            datosJugador[1].color,
+            datosJugador[1].alias.empty()   ? "COBALT" : datosJugador[1].alias,
+            datosJugador[1].victory.empty() ? "assets/images/cobalt_victory.png" : datosJugador[1].victory);
+    };
+
+    // Primera partida
+    aplicarPersonajesAlHUD();
+    reiniciarPartida();
+
+    // ── Bucle principal ───────────────────────────────────────
     while (ventana.isOpen())
     {
+        // ── Eventos ──────────────────────────────────────────
         sf::Event ev;
-        while (ventana.pollEvent(ev))
+        while (ventana.pollEvent(ev)) {
             if (ev.type == sf::Event::Closed) ventana.close();
+
+            // ESC abre pausa solo cuando se juega
+            if (ev.type == sf::Event::KeyPressed
+                && ev.key.code == sf::Keyboard::Escape
+                && estadoJuego == Estado::Jugando)
+            {
+                pausa.abrir();
+                estadoJuego = Estado::Pausado;
+            }
+
+            // Pausa maneja sus propios eventos
+            if (estadoJuego == Estado::Pausado) {
+                ResultadoPausa rp = pausa.procesarEvento(ev, musicaMuteada);
+                if (rp == ResultadoPausa::Continuar) {
+                    estadoJuego = Estado::Jugando;
+                } else if (rp == ResultadoPausa::VolverMenu) {
+                    // Ir al menú a elegir personajes
+                    jugadores.clear();
+                    listaGancheables.clear();
+                    mapa.reset();
+                    b2DestroyWorld(worldId);
+                    worldId = b2CreateWorld(&wd);
+
+                    Menu menuPausa(ventana, musica);
+                    ResultadoMenu rMenu = menuPausa.ejecutar();
+                    if (rMenu.salir || !ventana.isOpen()) { ventana.close(); break; }
+
+                    datosJugador[0] = rMenu.datosJ1;
+                    datosJugador[1] = rMenu.datosJ2;
+                    aplicarPersonajesAlHUD();
+                    reiniciarPartida();
+                }
+            }
+        }
+
+        if (!ventana.isOpen()) break;
 
         float dt = reloj.restart().asSeconds();
         dt = std::min(dt, 0.05f);
 
+        // ── CONTEO ───────────────────────────────────────────
+        if (estadoJuego == Estado::Conteo)
+        {
+            acumulador += dt;
+            while (acumulador >= TIEMPO_PASO) {
+                b2World_Step(worldId, TIEMPO_PASO, SUB_PASOS);
+                acumulador -= TIEMPO_PASO;
+            }
+            for (auto& j : jugadores) j->update(dt);
+
+            if (!countdown.update(dt)) {
+                timerGracia = GRACIA_INICIO * 0.3f;
+                estadoJuego = Estado::Jugando;
+            }
+            hud.update({0.f,0.f},{false,false},vidas,0,dt);
+        }
         // ── JUGANDO ──────────────────────────────────────────
-        if (estadoJuego == Estado::Jugando)
+        else if (estadoJuego == Estado::Jugando)
         {
             if (timerGracia > 0.f) timerGracia -= dt;
 
@@ -153,52 +226,42 @@ int main()
                 b2World_Step(worldId, TIEMPO_PASO, SUB_PASOS);
                 acumulador -= TIEMPO_PASO;
             }
-
             for (auto& j : jugadores) j->update(dt);
 
-            // ── Reconstruir lista de gancheables periódicamente ──
-            // (cuando se generan/eliminan chunks cambian los bodies)
             timerActualizaGancheables += dt;
             if (timerActualizaGancheables > 2.f) {
                 timerActualizaGancheables = 0.f;
-                listaGancheables = construirListaGancheables(mapa);
+                listaGancheables = construirListaGancheables(*mapa);
                 for (auto& j : jugadores)
                     j->gancho->setGancheables(&listaGancheables);
             }
 
-            mapa.update(dt, camara.getCentro().x);
+            mapa->update(dt, camara.getCentro().x);
 
-            // ── Colisión con cajas del pickup ─────────────────
-            // Las cajas FRENA al jugador que las toca (no bloquean)
+            // Cajas
             for (auto& j : jugadores) {
                 if (j->estaMuerto()) continue;
                 sf::FloatRect bj = j->getBounds();
-                for (auto& c : mapa.getCajas()) {
+                for (auto& c : mapa->getCajas()) {
                     if (!c.activa) continue;
                     if (bj.intersects(c.visual.getGlobalBounds())) {
-                        // Frenar velocidad X del jugador
                         j->aplicarFreno(CAJA_FRENO);
-                        c.activa       = false;
-                        c.timerRespawn = 0.f;
-                        particulas.emitir(c.posBase, TipoParticula::Chispa,
-                                          sf::Color(255,220,80), 15);
+                        c.activa = false; c.timerRespawn = 0.f;
+                        particulas.emitir(c.posBase, TipoParticula::Chispa, sf::Color(255,220,80), 15);
                     }
                 }
             }
 
-            // ── Colisión con picos ────────────────────────────
+            // Picos
             if (timerGracia <= 0.f) {
                 for (auto& j : jugadores) {
                     if (j->estaMuerto()) continue;
                     sf::FloatRect bj = j->getBounds();
-                    for (auto& p : mapa.getPlataformas()) {
+                    for (auto& p : mapa->getPlataformas()) {
                         if (!p.esPico || !p.valido) continue;
-                        sf::FloatRect bp = p.rectVisual.getGlobalBounds();
-                        if (bj.intersects(bp)) {
-                            // Muere instantáneamente
+                        if (bj.intersects(p.rectVisual.getGlobalBounds())) {
                             j->eliminar();
-                            particulas.emitir(j->getPosicion(),
-                                TipoParticula::Chispa, sf::Color(255, 60, 60), 25);
+                            particulas.emitir(j->getPosicion(), TipoParticula::Chispa, sf::Color(255,60,60), 25);
                         }
                     }
                 }
@@ -207,66 +270,62 @@ int main()
             // Cámara
             std::vector<sf::Vector2f> posVivos;
             for (auto& j : jugadores)
-                if (!j->estaMuerto())
-                    posVivos.push_back(j->getPosicion());
-            if (!posVivos.empty())
-                camara.update(posVivos, dt);
+                if (!j->estaMuerto()) posVivos.push_back(j->getPosicion());
+            if (!posVivos.empty()) camara.update(posVivos, dt);
 
             // Eliminación por salir de pantalla
             if (timerGracia <= 0.f) {
                 for (auto& j : jugadores) {
                     if (!j->estaMuerto() && camara.fueraDePantalla(j->getPosicion())) {
                         j->eliminar();
-                        particulas.emitir(j->getPosicion(),
-                                          TipoParticula::Confetti, sf::Color::White, 30);
+                        particulas.emitir(j->getPosicion(), TipoParticula::Confetti, sf::Color::White, 30);
                     }
                 }
             }
 
             particulas.update(dt);
 
-            // ── Detectar muerte ───────────────────────────────
+            // Detectar muerte
             int idMuerto = -1;
             for (int i = 0; i < (int)jugadores.size(); ++i) {
                 bool muertoAhora = jugadores[i]->estaMuerto();
-                if (vivoAntes[i] && muertoAhora)
-                    idMuerto = i;
+                if (vivoAntes[i] && muertoAhora) idMuerto = i;
                 vivoAntes[i] = !muertoAhora;
             }
 
             if (idMuerto >= 0) {
                 vidas[idMuerto]--;
-                int idSobreviviente = 1 - idMuerto;
-
-                particulas.emitir(
-                    {(float)ANCHO_VENTANA/2.f, (float)ALTO_VENTANA/2.f},
-                    TipoParticula::Confetti, sf::Color::White, 60);
-
+                int idSob = 1 - idMuerto;
+                particulas.emitir({(float)ANCHO_VENTANA/2.f,(float)ALTO_VENTANA/2.f},
+                                   TipoParticula::Confetti, sf::Color::White, 60);
                 if (vidas[idMuerto] <= 0) {
-                    ganadorFinal = idSobreviviente;
+                    ganadorFinal = idSob;
                     hud.mostrarFinJuego(ganadorFinal);
                     estadoJuego = Estado::FinJuego;
                 } else {
-                    hud.mostrarSobrevivio(idSobreviviente);
+                    hud.mostrarSobrevivio(idSob);
                     estadoJuego = Estado::EntreRespawn;
                     timerPausa  = 0.f;
                 }
             }
 
             // HUD
-            std::vector<float> vels;
-            std::vector<bool>  ganch;
-            int idLider = 0;
-            float maxX  = -1e9f;
+            std::vector<float> vels; std::vector<bool> ganch;
+            int idLider = 0; float maxX = -1e9f;
             for (int i = 0; i < (int)jugadores.size(); ++i) {
                 vels.push_back(jugadores[i]->getVelocidadX());
                 ganch.push_back(jugadores[i]->gancho->estaActivo());
-                if (jugadores[i]->getPosicion().x > maxX) {
-                    maxX = jugadores[i]->getPosicion().x;
-                    idLider = i;
-                }
+                if (jugadores[i]->getPosicion().x > maxX)
+                    { maxX = jugadores[i]->getPosicion().x; idLider = i; }
             }
             hud.update(vels, ganch, vidas, idLider, dt);
+        }
+        // ── PAUSADO ──────────────────────────────────────────
+        else if (estadoJuego == Estado::Pausado)
+        {
+            pausa.update(dt);
+            hud.update({0.f,0.f},{false,false},vidas,0,dt);
+            particulas.update(dt);
         }
         // ── ENTRE RESPAWN ─────────────────────────────────────
         else if (estadoJuego == Estado::EntreRespawn)
@@ -278,8 +337,14 @@ int main()
             {
                 hud.ocultarVictoria();
                 particulas.limpiar();
-                respawnearJugadores(jugadores);
-                estadoJuego = Estado::Jugando;
+                float camX = camara.getCentro().x;
+                for (int i = 0; i < (int)jugadores.size(); ++i)
+                    jugadores[i]->resetear(mapa->spawnJugador(i, camX));
+                vivoAntes   = {true, true};
+                timerGracia = GRACIA_INICIO;
+                camara.activarShake(0.5f, 14.f);
+                countdown.iniciar();
+                estadoJuego = Estado::Conteo;
             }
             confirmarPress = conf;
             hud.update({0.f,0.f},{false,false},vidas,0,dt);
@@ -288,54 +353,72 @@ int main()
         // ── FIN DE JUEGO ──────────────────────────────────────
         else if (estadoJuego == Estado::FinJuego)
         {
-            bool conf = accionConfirmar();
+            // Física congelada. Space/Enter = revancha, Esc = menú
+            bool conf   = accionConfirmar();
+            bool escNow = sf::Keyboard::isKeyPressed(sf::Keyboard::Escape);
+
             if (conf && !confirmarPress) {
-                // Destruir mundo físico antes del menú
-                b2DestroyWorld(worldId);
-
-                // Volver al menú principal
-                Menu menuRematch(ventana, musica);
-                ResultadoMenu resRematch = menuRematch.ejecutar();
-
-                if (resRematch.salir || !ventana.isOpen())
-                    break;
-
-                // Recrear mundo físico con configuración nueva
-                wd.gravity = {0.f, GRAVEDAD};
-                worldId = b2CreateWorld(&wd);
-
-                vidas        = {VIDAS_INICIALES, VIDAS_INICIALES};
-                ganadorFinal = -1;
-                hud.ocultarVictoria();
-                particulas.limpiar();
-                mapa = Mapa(worldId);
-                camara.resetearAlInicio();
+                // Revancha directa con los mismos personajes
+                reiniciarPartida();
+                confirmarPress = false;
+            } else if (escNow && !confirmarPress) {
+                // Ir al menú a elegir personaje
                 jugadores.clear();
                 listaGancheables.clear();
-                jugadores = crearJugadores();
-                estadoJuego = Estado::Jugando;
+                mapa.reset();
+                b2DestroyWorld(worldId);
+                worldId = b2CreateWorld(&wd);
+
+                Menu menuRematch(ventana, musica);
+                ResultadoMenu res2 = menuRematch.ejecutar();
+                if (res2.salir || !ventana.isOpen()) break;
+
+                datosJugador[0] = res2.datosJ1;
+                datosJugador[1] = res2.datosJ2;
+                aplicarPersonajesAlHUD();
+                reiniciarPartida();
+                confirmarPress = false;
+            } else {
+                confirmarPress = conf || escNow;
             }
-            confirmarPress = conf;
+
             hud.update({0.f,0.f},{false,false},vidas,0,dt);
             particulas.update(dt);
         }
 
-        // ── Render ───────────────────────────────────────────
-        camara.aplicar(ventana);
+        // ── RENDER ───────────────────────────────────────────
+        if (estadoJuego != Estado::FinJuego)
+            camara.aplicar(ventana);
+
         ventana.clear(sf::Color(10,12,30));
 
-        mapa.drawFondo(ventana, camara.getCentro().x);
-        mapa.drawPlataformas(ventana);
-        mapa.drawItems(ventana);
-        for (auto& j : jugadores) j->draw(ventana);
+        if (mapa) {
+            mapa->drawFondo(ventana, camara.getCentro().x);
+            mapa->drawPlataformas(ventana);
+            mapa->drawItems(ventana);
+        }
+
+        if (estadoJuego != Estado::FinJuego)
+            for (auto& j : jugadores) j->draw(ventana);
+
         particulas.draw(ventana);
 
         camara.restaurarVista(ventana);
         hud.draw(ventana);
 
+        if (estadoJuego == Estado::Conteo)
+            countdown.draw();
+
+        if (estadoJuego == Estado::Pausado)
+            pausa.draw(musicaMuteada);
+
         ventana.display();
     }
 
+    // Limpieza ordenada al salir
+    jugadores.clear();
+    listaGancheables.clear();
+    mapa.reset();
     b2DestroyWorld(worldId);
     return 0;
 }
