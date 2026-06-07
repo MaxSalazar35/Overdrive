@@ -1,11 +1,11 @@
 // ============================================================
 // Camara.cpp — Overdrive
-// Sin límite derecho (mapa infinito). El límite izquierdo
-// sigue siendo x = mitad de pantalla (no se puede retroceder).
 // ============================================================
 #include "Camara.hpp"
 #include <algorithm>
 #include <limits>
+#include <cmath>
+#include <cstdlib>
 
 Camara::Camara(float anchoMundo, float altoMundo)
     : anchoMundo(anchoMundo), altoMundo(altoMundo), xObjetivo(ANCHO_VENTANA / 2.f)
@@ -25,12 +25,22 @@ void Camara::update(const std::vector<sf::Vector2f>& posiciones, float dt)
     float xActual = vista.getCenter().x;
     float xNueva  = xActual + (xMeta - xActual) * CAM_VELOCIDAD * dt;
 
-    // Solo clamp izquierdo — derecho es infinito
     float mitad = ANCHO_VENTANA / 2.f;
     xNueva = std::max(xNueva, mitad);
-    // Sin clamp derecho: el mapa se genera infinitamente
 
-    vista.setCenter(xNueva, altoMundo / 2.f);
+    float shakeX = 0.f, shakeY = 0.f;
+    if (shakeTimer > 0.f) {
+        shakeTimer -= dt;
+        float t = shakeTimer / shakeDuracion;          // 1→0
+        float amp = shakeIntensidad * t * t;           // decae cuadráticamente
+        // Dirección pseudo-aleatoria basada en tiempo
+        float ang = shakeTimer * 47.3f;
+        shakeX = amp * std::cos(ang);
+        shakeY = amp * std::sin(ang * 1.3f);
+        if (shakeTimer < 0.f) shakeTimer = 0.f;
+    }
+
+    vista.setCenter(xNueva + shakeX, altoMundo / 2.f + shakeY);
 }
 
 void Camara::aplicar(sf::RenderWindow& ventana) {
@@ -42,7 +52,7 @@ void Camara::restaurarVista(sf::RenderWindow& ventana) {
 }
 
 bool Camara::fueraDePantalla(sf::Vector2f pos) const {
-    float bordeIzq   = vista.getCenter().x - ANCHO_VENTANA / 2.f;
+    float bordeIzq    = vista.getCenter().x - ANCHO_VENTANA / 2.f;
     float bordeArriba = vista.getCenter().y - ALTO_VENTANA / 2.f;
     float bordeAbajo  = vista.getCenter().y + ALTO_VENTANA / 2.f;
 
