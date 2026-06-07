@@ -55,6 +55,11 @@ private:
     sf::Font fuente, fuenteTitulo;
     bool     fuenteCargada = false;
 
+    // Sonido de opción
+    sf::SoundBuffer bufOpcion;
+    sf::Sound       sndOpcion;
+    bool            sndOpcionOK = false;
+
     sf::Texture texFondo1, texFondo2, texFondo3;
     sf::Sprite  sprFondo1, sprFondo2, sprFondo3;
     bool        fondoCargado = false;

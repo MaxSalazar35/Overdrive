@@ -30,6 +30,9 @@ void Menu::cargarRecursos() {
     fuenteTitulo  = fuente;
     fuenteCargada = true;
 
+    sndOpcionOK = bufOpcion.loadFromFile("assets/sounds/opcion.ogg");
+    if (sndOpcionOK) { sndOpcion.setBuffer(bufOpcion); sndOpcion.setVolume(70.f); }
+
     fondoCargado =  texFondo1.loadFromFile("assets/images/bg_layer1.png")
                  && texFondo2.loadFromFile("assets/images/bg_layer2.png")
                  && texFondo3.loadFromFile("assets/images/bg_layer3.png");
@@ -167,12 +170,17 @@ void Menu::manejarInputPrincipal(bool& listo, ResultadoMenu& res) {
     bool confirma = sf::Keyboard::isKeyPressed(sf::Keyboard::Return)
                  || sf::Keyboard::isKeyPressed(sf::Keyboard::Space);
 
-    if (arriba && !arribaPress)
+    if (arriba && !arribaPress) {
         opcionActual = (opcionActual - 1 + NUM_OPCIONES) % NUM_OPCIONES;
-    if (abajo && !abajoPress)
+        if (sndOpcionOK) sndOpcion.play();
+    }
+    if (abajo && !abajoPress) {
         opcionActual = (opcionActual + 1) % NUM_OPCIONES;
+        if (sndOpcionOK) sndOpcion.play();
+    }
 
     if (confirma && !enterPress) {
+        if (sndOpcionOK) sndOpcion.play();
         switch (opcionActual) {
             case 0: pantalla = PantallaMenu::SeleccionPersonaje;
                     jugadorActivo = 0; seleccionJ1 = 0; seleccionJ2 = 1; break;
@@ -230,12 +238,12 @@ void Menu::manejarInputSeleccion(bool& listo, ResultadoMenu& res) {
     int n = (int)personajes.size();
 
     if (jugadorActivo == 0) {
-        if (izq && !izqPress) seleccionJ1 = (seleccionJ1 - 1 + n) % n;
-        if (der && !derPress) seleccionJ1 = (seleccionJ1 + 1) % n;
-        if (confirma && !enterPress) jugadorActivo = 1;
+        if (izq && !izqPress) { seleccionJ1 = (seleccionJ1 - 1 + n) % n; if (sndOpcionOK) sndOpcion.play(); }
+        if (der && !derPress) { seleccionJ1 = (seleccionJ1 + 1) % n;     if (sndOpcionOK) sndOpcion.play(); }
+        if (confirma && !enterPress) { jugadorActivo = 1; if (sndOpcionOK) sndOpcion.play(); }
     } else {
-        if (izq && !izqPress) seleccionJ2 = (seleccionJ2 - 1 + n) % n;
-        if (der && !derPress) seleccionJ2 = (seleccionJ2 + 1) % n;
+        if (izq && !izqPress) { seleccionJ2 = (seleccionJ2 - 1 + n) % n; if (sndOpcionOK) sndOpcion.play(); }
+        if (der && !derPress) { seleccionJ2 = (seleccionJ2 + 1) % n;     if (sndOpcionOK) sndOpcion.play(); }
         if ((confirmJ2 || confirma) && !enterPress) {
             res.personaje1 = seleccionJ1;
             res.personaje2 = seleccionJ2;
