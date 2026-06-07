@@ -503,19 +503,19 @@ void Menu::dibujarSeleccion() {
     float sep = cardY + cardH + 14.f;
     dibujarLineaNeon(0, sep, W, sep, colActivo, 1.5f);
 
-    float loreY = sep + 18.f;
+    float loreY = sep + 30.f;
     const DatosPersonaje& dp = personajes[selActual];
 
     // Nombre más grande y centrado
     ventana.draw(crearTexto(dp.nombre, 32, colActivo, W*0.5f, loreY, true));
 
     // Lore más grande y centrado con más espacio entre líneas
-    float ly = loreY + 50.f;
+    float ly = loreY + 55.f;
     std::string lore = dp.lore;
     size_t pos = 0;
     while ((pos = lore.find('\n')) != std::string::npos) {
         ventana.draw(crearTexto(lore.substr(0,pos), 22, COL_TEXTO, W*0.5f, ly, true));
-        lore = lore.substr(pos+1); ly += 32.f;
+        lore = lore.substr(pos+1); ly += 34.f;
     }
     ventana.draw(crearTexto(lore, 22, COL_TEXTO, W*0.5f, ly, true));
 
@@ -534,7 +534,9 @@ void Menu::dibujarSeleccion() {
 sf::Text Menu::crearTexto(const std::string& str, unsigned size,
                             sf::Color color, float x, float y, bool centrarX) {
     sf::Text t;
-    t.setFont(fuente); t.setCharacterSize(size); t.setFillColor(color); t.setString(str);
+    t.setFont(fuente); t.setCharacterSize(size); t.setFillColor(color);
+    // Usar fromUtf8 para que SFML interprete correctamente los acentos
+    t.setString(sf::String::fromUtf8(str.begin(), str.end()));
     if (centrarX) {
         sf::FloatRect b = t.getLocalBounds();
         t.setOrigin(b.left + b.width*0.5f, b.top);

@@ -20,7 +20,7 @@ public:
 
         // Victoria
         victoryOK = victory.openFromFile("assets/sounds/victorysong.ogg");
-        if (victoryOK) { victory.setLoop(false); victory.setVolume(70.f); }
+        if (victoryOK) { victory.setLoop(false); victory.setVolume(90.f); }
 
         // Efectos
         auto load = [](sf::SoundBuffer& buf, sf::Sound& snd,
@@ -28,11 +28,11 @@ public:
             ok = buf.loadFromFile(path);
             if (ok) { snd.setBuffer(buf); snd.setVolume(vol); }
         };
-        load(bufOpcion,     sndOpcion,     "assets/sounds/opcion.ogg",     70.f, bufOpcionOK);
-        load(bufSeleccionar,sndSeleccionar,"assets/sounds/seleccionar.ogg", 75.f, bufSeleccionarOK);
-        load(bufSalir,      sndSalir,      "assets/sounds/salir.ogg",       70.f, bufSalirOK);
-        load(bufDeath,      sndDeath,      "assets/sounds/death.ogg",       80.f, bufDeathOK);
-        load(bufCaja,       sndCaja,       "assets/sounds/cajas.ogg",       65.f, bufCajaOK);
+        load(bufOpcion,     sndOpcion,     "assets/sounds/opcion.ogg",     85.f, bufOpcionOK);
+        load(bufSeleccionar,sndSeleccionar,"assets/sounds/seleccionar.ogg", 90.f, bufSeleccionarOK);
+        load(bufSalir,      sndSalir,      "assets/sounds/salir.ogg",       85.f, bufSalirOK);
+        load(bufDeath,      sndDeath,      "assets/sounds/death.ogg",      100.f, bufDeathOK);
+        load(bufCaja,       sndCaja,       "assets/sounds/cajas.ogg",       85.f, bufCajaOK);
     }
 
     // ── Música principal ──────────────────────────────────────
