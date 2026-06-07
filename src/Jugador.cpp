@@ -119,6 +119,7 @@ void Jugador::procesarEntrada(float dt)
     input.update();
 
     bool botonDesliz = input.presionado(Accion::Deslizar);
+    bool botonGancho = input.presionado(Accion::Gancho);
 
     // ── Deslizamiento activo ──────────────────────────────────
     if (timerDesliz > 0.f) {
@@ -128,13 +129,20 @@ void Jugador::procesarEntrada(float dt)
         b2Body_SetLinearVelocity(cuerpo, {velX, va.y});
 
         if (!botonDesliz || !enSuelo) {
-            // Solto el boton o salio del suelo: iniciar salida animada
             timerDesliz       = 0.f;
             timerSalidaDesliz = DURACION_SALIDA_DESLIZ;
         }
-
-        ganchoPresionado = true;
         deslizPresionado = botonDesliz;
+
+        // Gancho disponible también durante el desliz
+        if (botonGancho && !ganchoPresionado) {
+            sf::Vector2f dir(0.f, -1.f);
+            bool ok = gancho->disparar(dir, mirandoDerecha);
+            if (ok)
+                particulas.emitir(gancho->getPuntoAnclaje(),
+                                  TipoParticula::Chispa, sf::Color(255,220,80), 12);
+        }
+        ganchoPresionado = botonGancho;
         return;
     }
 
@@ -159,10 +167,10 @@ void Jugador::procesarEntrada(float dt)
     bool botonSalto = input.presionado(Accion::Saltar);
 
     if (botonSalto && !saltando && enSuelo && puedesSaltar && cooldownSalto <= 0.f) {
-        saltando              = true;
-        timerSalto            = SALTO_TIEMPO_MAX;
-        puedesSaltar          = false;
-        animCaidaCongelada    = false;  // reiniciar flag para esta nueva subida
+        saltando           = true;
+        timerSalto         = SALTO_TIEMPO_MAX;
+        puedesSaltar       = false;
+        animCaidaCongelada = false;
         particulas.emitir(getPosicion() + sf::Vector2f(0, 35.f),
                           TipoParticula::Polvo, sf::Color::White, 8);
     }
@@ -173,6 +181,7 @@ void Jugador::procesarEntrada(float dt)
         cooldownSalto = SALTO_COOLDOWN;
     }
 
+    bool aplicandoSalto = false;
     if (saltando && timerSalto > 0.f) {
         timerSalto -= dt;
         if (timerSalto <= 0.f) {
@@ -181,18 +190,16 @@ void Jugador::procesarEntrada(float dt)
             cooldownSalto = SALTO_COOLDOWN;
         } else {
             b2Body_SetLinearVelocity(cuerpo, {velX, SALTO_VEL});
-            goto salto_gancho;
+            aplicandoSalto = true;
         }
     }
 
-    // Solo X — Y la maneja Box2D
-    {
+    if (!aplicandoSalto) {
+        // Solo X — Y la maneja Box2D
         b2Vec2 va = b2Body_GetLinearVelocity(cuerpo);
         b2Body_SetLinearVelocity(cuerpo, {velX, va.y});
-    }
 
-    // ── Deslizamiento (activar) ───────────────────────────────
-    {
+        // ── Deslizamiento (activar) ───────────────────────────
         bool iniciarDesliz = botonDesliz && !deslizPresionado
                              && enSuelo
                              && std::abs(velX) > DESLIZ_VEL_MIN;
@@ -200,41 +207,27 @@ void Jugador::procesarEntrada(float dt)
         if (iniciarDesliz) {
             timerDesliz         = 99.f;
             timerSalidaDesliz   = 0.f;
-            deslizBoostAplicado = false;   // resetear para esta nueva deslizada
+            deslizBoostAplicado = false;
             particulas.emitir(getPosicion() + sf::Vector2f(0, 35.f),
                               TipoParticula::Polvo, sf::Color::White, 12);
         }
-    }
 
-    // ── Boost de desliz en bajada ─────────────────────────────
-    // Si el jugador está deslizando y la plataforma "baja" (detectamos
-    // inclinación revisando si hay suelo un poco más adelante y más abajo),
-    // aplicamos un impulso extra UNA sola vez por deslizada.
-    // Como las plataformas son horizontales usamos un enfoque simple:
-    // si el jugador desliza y su velocidad Y reciente era positiva antes
-    // de tocar el suelo (venía cayendo), es "bajada". Lo simplificamos:
-    // si el jugador supera cierta velocidad X al deslizar, reforzamos.
-    if (timerDesliz > 0.f && !deslizBoostAplicado && enSuelo) {
-        b2Vec2 va = b2Body_GetLinearVelocity(cuerpo);
-        float absVel = std::abs(va.x);
-        if (absVel > 80.f) {
-            // Impulso extra: 15% de la velocidad actual en la dirección de movimiento
-            float boost = va.x * 0.15f;
-            // Cap para que no se dispare
-            float newVelX = va.x + boost;
-            float cap = 480.f;
-            if (newVelX >  cap) newVelX =  cap;
-            if (newVelX < -cap) newVelX = -cap;
-            b2Body_SetLinearVelocity(cuerpo, {newVelX, va.y});
-            deslizBoostAplicado = true;
+        // ── Boost de desliz ───────────────────────────────────
+        if (timerDesliz > 0.f && !deslizBoostAplicado && enSuelo) {
+            b2Vec2 v2 = b2Body_GetLinearVelocity(cuerpo);
+            if (std::abs(v2.x) > 80.f) {
+                float newVelX = v2.x * 1.15f;
+                float cap = 480.f;
+                if (newVelX >  cap) newVelX =  cap;
+                if (newVelX < -cap) newVelX = -cap;
+                b2Body_SetLinearVelocity(cuerpo, {newVelX, v2.y});
+                deslizBoostAplicado = true;
+            }
         }
     }
 
-salto_gancho:
-    // ── Gancho ───────────────────────────────────────────────
-    bool botonGancho = input.presionado(Accion::Gancho);
+    // ── Gancho (siempre al final, sin importar salto/desliz) ──
     if (botonGancho && !ganchoPresionado) {
-        // El ángulo se calcula internamente en Gancho según la velocidad actual.
         sf::Vector2f dir(0.f, -1.f);
         bool ok = gancho->disparar(dir, mirandoDerecha);
         if (ok)
