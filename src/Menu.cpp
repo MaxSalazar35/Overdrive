@@ -19,7 +19,9 @@ static sf::Color colorJ(int idx) {
 static const char* OPCIONES[4] = { "JUGAR", "COMO JUGAR", "AJUSTES", "SALIR" };
 
 // ─────────────────────────────────────────────────────────────
-Menu::Menu(sf::RenderWindow& v, sf::Music& m) : ventana(v), musica(m) {
+Menu::Menu(sf::RenderWindow& v, sf::Music& m, SistemaAudio* a)
+    : ventana(v), musica(m), audio(a)
+{
     cargarRecursos();
     registrarPersonajes();
 }
@@ -29,9 +31,6 @@ void Menu::cargarRecursos() {
         fuente.loadFromFile("assets/fonts/Ring.ttf");
     fuenteTitulo  = fuente;
     fuenteCargada = true;
-
-    sndOpcionOK = bufOpcion.loadFromFile("assets/sounds/opcion.ogg");
-    if (sndOpcionOK) { sndOpcion.setBuffer(bufOpcion); sndOpcion.setVolume(70.f); }
 
     fondoCargado =  texFondo1.loadFromFile("assets/images/bg_layer1.png")
                  && texFondo2.loadFromFile("assets/images/bg_layer2.png")
@@ -71,19 +70,19 @@ void Menu::registrarPersonajes() {
         {
             "Jin \"COBALT\" Tanaka", "COBALT",
             "assets/images/cobalt.png", "assets/images/cobalt_victory.png",
-            "El Piloto de Precision.\nCada salto calculado al milimetro.\nSu traje azul jamas muestra una marca.",
+            "El Piloto de Precision.\nCada salto calculado al milímetro.\nSu traje azul jamás muestra una marca.",
             sf::Color(60, 140, 255)
         },
         {
             "Kira \"APEX\" Vance", "APEX",
             "assets/images/apex.png", "assets/images/apex_victory.png",
-            "La Buscavidas Callejera.\nCrecio en los suburbios industriales.\nDeja una estela de neon verde al deslizarse.",
+            "La Buscavidas Callejera.\nCreció en los suburbios industriales.\nDeja una estela de neón verde al deslizarse.",
             sf::Color(60, 220, 80)
         },
         {
             "Marcus \"VOLTAGE\" Briggs", "VOLTAGE",
             "assets/images/voltage.png", "assets/images/voltage_victory.png",
-            "El Mecanico del Bloque.\nModifico su armadura con chatarra corporativa.\nGrita de emocion en la velocidad maxima.",
+            "El Mecanico del Bloque.\nModificó su armadura con chatarra corporativa.\nGrita de emoción en la velocidad máxima.",
             sf::Color(255, 200, 30)
         },
         {
@@ -172,21 +171,28 @@ void Menu::manejarInputPrincipal(bool& listo, ResultadoMenu& res) {
 
     if (arriba && !arribaPress) {
         opcionActual = (opcionActual - 1 + NUM_OPCIONES) % NUM_OPCIONES;
-        if (sndOpcionOK) sndOpcion.play();
+        if (audio) audio->playOpcion();
     }
     if (abajo && !abajoPress) {
         opcionActual = (opcionActual + 1) % NUM_OPCIONES;
-        if (sndOpcionOK) sndOpcion.play();
+        if (audio) audio->playOpcion();
     }
 
     if (confirma && !enterPress) {
-        if (sndOpcionOK) sndOpcion.play();
         switch (opcionActual) {
-            case 0: pantalla = PantallaMenu::SeleccionPersonaje;
-                    jugadorActivo = 0; seleccionJ1 = 0; seleccionJ2 = 1; break;
-            case 1: pantalla = PantallaMenu::ComoJugar;  break;
-            case 2: pantalla = PantallaMenu::Ajustes;    break;
-            case 3: res.salir = true; listo = true;      break;
+            case 0: // JUGAR
+                if (audio) audio->playSeleccionar();
+                pantalla = PantallaMenu::SeleccionPersonaje;
+                jugadorActivo = 0; seleccionJ1 = 0; seleccionJ2 = 1; break;
+            case 1: // COMO JUGAR
+                if (audio) audio->playSeleccionar();
+                pantalla = PantallaMenu::ComoJugar; break;
+            case 2: // AJUSTES
+                if (audio) audio->playSeleccionar();
+                pantalla = PantallaMenu::Ajustes; break;
+            case 3: // SALIR
+                if (audio) audio->playSalir();
+                res.salir = true; listo = true; break;
         }
     }
     arribaPress = arriba; abajoPress = abajo; enterPress = confirma;
@@ -196,8 +202,14 @@ void Menu::manejarInputComoJugar() {
     bool esc     = sf::Keyboard::isKeyPressed(sf::Keyboard::Escape);
     bool confirma= sf::Keyboard::isKeyPressed(sf::Keyboard::Return)
                 || sf::Keyboard::isKeyPressed(sf::Keyboard::Space);
-    if ((esc && !escPress) || (confirma && !enterPress))
+    if (esc && !escPress) {
+        if (audio) audio->playSalir();
         pantalla = PantallaMenu::Principal;
+    }
+    if (confirma && !enterPress) {
+        if (audio) audio->playSalir();
+        pantalla = PantallaMenu::Principal;
+    }
     escPress = esc; enterPress = confirma;
 }
 
@@ -217,10 +229,13 @@ void Menu::manejarInputAjustes() {
         if (opAjuste == 0) {
             musicaMuteada = !musicaMuteada;
             musica.setVolume(musicaMuteada ? 0.f : 50.f);
+            if (audio) audio->playSeleccionar();
         }
-        // opAjuste==1 reservado para futuro — pantalla completa eliminada
     }
-    if (esc && !escPress) pantalla = PantallaMenu::Principal;
+    if (esc && !escPress) {
+        if (audio) audio->playSalir();
+        pantalla = PantallaMenu::Principal;
+    }
 
     arribaPress = arriba; abajoPress = abajo; enterPress = confirma; escPress = esc;
 }
@@ -238,16 +253,16 @@ void Menu::manejarInputSeleccion(bool& listo, ResultadoMenu& res) {
     int n = (int)personajes.size();
 
     if (jugadorActivo == 0) {
-        if (izq && !izqPress) { seleccionJ1 = (seleccionJ1 - 1 + n) % n; if (sndOpcionOK) sndOpcion.play(); }
-        if (der && !derPress) { seleccionJ1 = (seleccionJ1 + 1) % n;     if (sndOpcionOK) sndOpcion.play(); }
-        if (confirma && !enterPress) { jugadorActivo = 1; if (sndOpcionOK) sndOpcion.play(); }
+        if (izq && !izqPress) { seleccionJ1 = (seleccionJ1 - 1 + n) % n; if (audio) audio->playOpcion(); }
+        if (der && !derPress) { seleccionJ1 = (seleccionJ1 + 1) % n;     if (audio) audio->playOpcion(); }
+        if (confirma && !enterPress) { jugadorActivo = 1; if (audio) audio->playSeleccionar(); }
     } else {
-        if (izq && !izqPress) { seleccionJ2 = (seleccionJ2 - 1 + n) % n; if (sndOpcionOK) sndOpcion.play(); }
-        if (der && !derPress) { seleccionJ2 = (seleccionJ2 + 1) % n;     if (sndOpcionOK) sndOpcion.play(); }
+        if (izq && !izqPress) { seleccionJ2 = (seleccionJ2 - 1 + n) % n; if (audio) audio->playOpcion(); }
+        if (der && !derPress) { seleccionJ2 = (seleccionJ2 + 1) % n;     if (audio) audio->playOpcion(); }
         if ((confirmJ2 || confirma) && !enterPress) {
+            if (audio) audio->playSeleccionar();
             res.personaje1 = seleccionJ1;
             res.personaje2 = seleccionJ2;
-            // Llenar datos completos de cada personaje elegido
             if (seleccionJ1 < (int)personajes.size()) {
                 const auto& p = personajes[seleccionJ1];
                 res.datosJ1 = { p.archivoSprite, p.archivoPerfil, p.alias, p.color };
@@ -261,6 +276,7 @@ void Menu::manejarInputSeleccion(bool& listo, ResultadoMenu& res) {
     }
 
     if (esc && !escPress) {
+        if (audio) audio->playSalir();
         if (jugadorActivo == 1) jugadorActivo = 0;
         else                    pantalla = PantallaMenu::Principal;
     }
@@ -487,19 +503,21 @@ void Menu::dibujarSeleccion() {
     float sep = cardY + cardH + 14.f;
     dibujarLineaNeon(0, sep, W, sep, colActivo, 1.5f);
 
-    float loreY = sep + 14.f;
+    float loreY = sep + 18.f;
     const DatosPersonaje& dp = personajes[selActual];
 
-    ventana.draw(crearTexto(dp.nombre, 26, colActivo, W*0.5f, loreY, true));
+    // Nombre más grande y centrado
+    ventana.draw(crearTexto(dp.nombre, 32, colActivo, W*0.5f, loreY, true));
 
-    float ly = loreY + 38.f;
+    // Lore más grande y centrado con más espacio entre líneas
+    float ly = loreY + 50.f;
     std::string lore = dp.lore;
     size_t pos = 0;
     while ((pos = lore.find('\n')) != std::string::npos) {
-        ventana.draw(crearTexto(lore.substr(0,pos), 17, COL_TEXTO, W*0.5f, ly, true));
-        lore = lore.substr(pos+1); ly += 26.f;
+        ventana.draw(crearTexto(lore.substr(0,pos), 22, COL_TEXTO, W*0.5f, ly, true));
+        lore = lore.substr(pos+1); ly += 32.f;
     }
-    ventana.draw(crearTexto(lore, 17, COL_TEXTO, W*0.5f, ly, true));
+    ventana.draw(crearTexto(lore, 22, COL_TEXTO, W*0.5f, ly, true));
 
     // Instrucciones pie
     float instrY = H - 48.f;

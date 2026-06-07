@@ -53,7 +53,7 @@ int main()
 
     // ── MENÚ PRINCIPAL ────────────────────────────────────────
     // El menú recibe la música activa para poder mutearla desde Ajustes
-    Menu menu(ventana, audio.getMusicaRef());
+    Menu menu(ventana, audio.getMusicaRef(), &audio);
     ResultadoMenu resMenu = menu.ejecutar();
     if (resMenu.salir || !ventana.isOpen()) return 0;
 
@@ -67,7 +67,7 @@ int main()
     if (!fuentePausa.loadFromFile("assets/fonts/Rajdhani-Bold.ttf"))
         fuentePausa.loadFromFile("assets/fonts/Ring.ttf");
     bool musicaMuteada = false;
-    Pausa pausa(ventana, audio.getMusicaRef(), fuentePausa);
+    Pausa pausa(ventana, audio.getMusicaRef(), fuentePausa, &audio);
 
     DatosPersonajeElegido datosJugador[2] = { resMenu.datosJ1, resMenu.datosJ2 };
 
@@ -169,7 +169,7 @@ int main()
                     worldId = b2CreateWorld(&wd);
                     audio.detenerVictoria();
 
-                    Menu menuPausa(ventana, audio.getMusicaRef());
+                    Menu menuPausa(ventana, audio.getMusicaRef(), &audio);
                     ResultadoMenu rMenu = menuPausa.ejecutar();
                     if (rMenu.salir || !ventana.isOpen()) { ventana.close(); break; }
 
@@ -359,7 +359,7 @@ int main()
                 worldId = b2CreateWorld(&wd);
                 audio.detenerVictoria();
 
-                Menu menuRematch(ventana, audio.getMusicaRef());
+                Menu menuRematch(ventana, audio.getMusicaRef(), &audio);
                 ResultadoMenu res2 = menuRematch.ejecutar();
                 if (res2.salir || !ventana.isOpen()) break;
 

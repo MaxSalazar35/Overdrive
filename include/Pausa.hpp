@@ -1,23 +1,19 @@
 #pragma once
 // ============================================================
-// Pausa.hpp — Overdrive  v2
-// Menú de pausa in-game.
-// - Se abre con ESC (evento KeyPressed desde main)
-// - Opciones: CONTINUAR / MÚSICA / VOLVER AL MENÚ
-// - Usa eventos discretos (no polling) para evitar el bug
-//   de que ESC abra y cierre la pausa en el mismo frame.
+// Pausa.hpp — Overdrive  v3
 // ============================================================
 #include <SFML/Graphics.hpp>
 #include <SFML/Audio.hpp>
 #include <cmath>
 #include <string>
+#include "Audio.hpp"
 
 enum class ResultadoPausa { Ninguno, Continuar, VolverMenu };
 
 class Pausa {
 public:
-    Pausa(sf::RenderWindow& v, sf::Music& m, sf::Font& f)
-        : ventana(v), musica(m), fuente(f) {}
+    Pausa(sf::RenderWindow& v, sf::Music& m, sf::Font& f, SistemaAudio* a = nullptr)
+        : ventana(v), musica(m), fuente(f), audio(a) {}
 
     bool estaActivo() const { return activo; }
 
@@ -48,16 +44,19 @@ public:
             case sf::Keyboard::Up:
             case sf::Keyboard::W:
                 opcion = (opcion - 1 + N) % N;
+                if (audio) audio->playOpcion();
                 break;
 
             case sf::Keyboard::Down:
             case sf::Keyboard::S:
                 opcion = (opcion + 1) % N;
+                if (audio) audio->playOpcion();
                 break;
 
             case sf::Keyboard::Return:
             case sf::Keyboard::Space:
                 if (opcion == 0) {
+                    if (audio) audio->playSalir();
                     cerrar();
                     return ResultadoPausa::Continuar;
                 } else if (opcion == 1) {
@@ -65,13 +64,16 @@ public:
                     musicaMuteada = !musicaMuteada;
                     muted         = musicaMuteada;
                     musica.setVolume(musicaMuteada ? 0.f : 20.f);
+                    if (audio) audio->playSeleccionar();
                 } else if (opcion == 2) {
+                    if (audio) audio->playSalir();
                     cerrar();
                     return ResultadoPausa::VolverMenu;
                 }
                 break;
 
             case sf::Keyboard::Escape:
+                if (audio) audio->playSalir();
                 cerrar();
                 return ResultadoPausa::Continuar;
 
@@ -198,6 +200,7 @@ private:
     sf::RenderWindow& ventana;
     sf::Music&        musica;
     sf::Font&         fuente;
+    SistemaAudio*     audio   = nullptr;
 
     bool  activo    = false;
     bool  muted     = false;

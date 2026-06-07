@@ -6,6 +6,7 @@
 #include <SFML/Audio.hpp>
 #include <string>
 #include <vector>
+#include "Audio.hpp"
 
 struct DatosPersonaje {
     std::string nombre;
@@ -35,7 +36,7 @@ struct ResultadoMenu {
 
 class Menu {
 public:
-    Menu(sf::RenderWindow& ventana, sf::Music& musica);
+    Menu(sf::RenderWindow& ventana, sf::Music& musica, SistemaAudio* audio = nullptr);
     ResultadoMenu ejecutar();
 
     // Devuelve el path del spritesheet del personaje elegido
@@ -55,10 +56,8 @@ private:
     sf::Font fuente, fuenteTitulo;
     bool     fuenteCargada = false;
 
-    // Sonido de opción
-    sf::SoundBuffer bufOpcion;
-    sf::Sound       sndOpcion;
-    bool            sndOpcionOK = false;
+    // Puntero al sistema de audio global (puede ser nullptr si no se pasa)
+    SistemaAudio* audio = nullptr;
 
     sf::Texture texFondo1, texFondo2, texFondo3;
     sf::Sprite  sprFondo1, sprFondo2, sprFondo3;
