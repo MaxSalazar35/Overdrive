@@ -70,7 +70,7 @@ void Menu::registrarPersonajes() {
         {
             "Jin \"COBALT\" Tanaka", "COBALT",
             "assets/images/cobalt.png", "assets/images/cobalt_victory.png",
-            "El Piloto de Precision.\nCada salto calculado al milímetro.\nSu traje azul jamás muestra una marca.",
+            "El Piloto de Precisi\xc3\xb3n.\nCada salto calculado al milímetro.\nSu traje azul jamás muestra una marca.",
             sf::Color(60, 140, 255)
         },
         {
@@ -82,7 +82,7 @@ void Menu::registrarPersonajes() {
         {
             "Marcus \"VOLTAGE\" Briggs", "VOLTAGE",
             "assets/images/voltage.png", "assets/images/voltage_victory.png",
-            "El Mecanico del Bloque.\nModificó su armadura con chatarra corporativa.\nGrita de emoción en la velocidad máxima.",
+            "El Mec\xc3\xa1nico del Bloque.\nModific\xc3\xb3 su armadura con chatarra corporativa.\nGrita de emoci\xc3\xb3n en la velocidad m\xc3\xa1xima.",
             sf::Color(255, 200, 30)
         },
         {
@@ -503,14 +503,24 @@ void Menu::dibujarSeleccion() {
     float sep = cardY + cardH + 14.f;
     dibujarLineaNeon(0, sep, W, sep, colActivo, 1.5f);
 
-    float loreY = sep + 30.f;
+    // Área disponible: desde sep hasta instrY
+    float instrY = H - 48.f;
+    float areaTop    = sep;
+    float areaBottom = instrY - 15.f;
+    float areaCentro = (areaTop + areaBottom) * 0.5f;
+
     const DatosPersonaje& dp = personajes[selActual];
 
-    // Nombre más grande y centrado
-    ventana.draw(crearTexto(dp.nombre, 32, colActivo, W*0.5f, loreY, true));
+    // Altura total del bloque: nombre(~36px) + gap(12px) + 3 líneas lore(22px c/u + 34px sep)
+    // = 36 + 12 + 22 + 34 + 22 + 34 + 22 = ~182px → centrar a partir de areaCentro - 91
+    float bloqueTotalH = 36.f + 12.f + 3 * 22.f + 2 * 34.f;  // nombre + 3 líneas
+    float bloqueTop    = areaCentro - bloqueTotalH * 0.5f;
 
-    // Lore más grande y centrado con más espacio entre líneas
-    float ly = loreY + 55.f;
+    // Nombre centrado
+    ventana.draw(crearTexto(dp.nombre, 32, colActivo, W*0.5f, bloqueTop, true));
+
+    // Líneas de lore
+    float ly = bloqueTop + 48.f;
     std::string lore = dp.lore;
     size_t pos = 0;
     while ((pos = lore.find('\n')) != std::string::npos) {
@@ -520,7 +530,6 @@ void Menu::dibujarSeleccion() {
     ventana.draw(crearTexto(lore, 22, COL_TEXTO, W*0.5f, ly, true));
 
     // Instrucciones pie
-    float instrY = H - 48.f;
     dibujarLineaNeon(0, instrY-10, W, instrY-10, COL_DIM, 1.f);
     std::string instrStr = (jugadorActivo==0)
         ? "J1:  FLECHAS IZQ/DER para cambiar  |  ENTER para confirmar  |  ESC para volver"
