@@ -94,12 +94,12 @@ bool Gancho::disparar(sf::Vector2f /*dir*/, bool mirandoDerecha)
     // Rayo 1: completamente vertical hacia arriba
     if (lanzar(0.f, -1.f)) return true;
 
-    // Rayo 2: 30° hacia adelante desde la vertical (60° desde horizontal)
+    // Rayo 2: 20° hacia adelante desde la vertical (70° desde horizontal)
     float sign = mirandoDerecha ? 1.f : -1.f;
-    float ang  = 60.f * PI / 180.f;   // 60° desde horizontal
+    float ang  = 70.f * PI / 180.f;   // 70° desde horizontal = 20° desde vertical
     if (lanzar(sign * std::cos(ang), -std::sin(ang))) return true;
 
-    // Rayo 3: 30° hacia el lado opuesto
+    // Rayo 3: 20° hacia el lado opuesto
     if (lanzar(-sign * std::cos(ang), -std::sin(ang))) return true;
 
     return false;

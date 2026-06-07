@@ -30,7 +30,7 @@ constexpr float JUG_ALTO          = 70.0f;
 // ── Gancho ───────────────────────────────────────────────────
 // Longitud del rayo. El jugador spawn en y≈580, techo en y=20 → 560px.
 // Aumentamos a 650 para garantizar alcance incluso en ángulos diagonales.
-constexpr float GANCHO_LONGITUD       = 650.0f;
+constexpr float GANCHO_LONGITUD       = 750.0f;
 // Ángulo del disparo en radianes desde horizontal (70° = muy vertical pero con sesgo)
 constexpr float GANCHO_ANGULO         = 1.3963f;   // 80° en rad
 // Umbral Y máximo del punto de contacto (solo el techo continuo en y=0..20)

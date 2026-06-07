@@ -1,5 +1,5 @@
 // ============================================================
-// main.cpp — Overdrive v10
+// main.cpp — Overdrive v12
 // ============================================================
 #include <SFML/Graphics.hpp>
 #include <SFML/Audio.hpp>
@@ -20,6 +20,7 @@
 #include "Menu.hpp"
 #include "Countdown.hpp"
 #include "Pausa.hpp"
+#include "Audio.hpp"
 
 static const int   VIDAS_INICIALES = 3;
 static const float GRACIA_INICIO   = 1.2f;
@@ -46,16 +47,17 @@ int main()
     ventana.setFramerateLimit(FPS_LIMITE);
     ventana.setKeyRepeatEnabled(false);
 
-    sf::Music musica;
-    bool musicaOK = musica.openFromFile("assets/music/musica.ogg");
-    if (musicaOK) { musica.setLoop(true); musica.setVolume(50.f); musica.play(); }
+    // ── Sistema de audio ──────────────────────────────────────
+    SistemaAudio audio;
+    audio.iniciarMusica();
 
     // ── MENÚ PRINCIPAL ────────────────────────────────────────
-    Menu menu(ventana, musica);
+    // El menú recibe la música activa para poder mutearla desde Ajustes
+    Menu menu(ventana, audio.getMusicaRef());
     ResultadoMenu resMenu = menu.ejecutar();
     if (resMenu.salir || !ventana.isOpen()) return 0;
 
-    // ── Recursos compartidos (viven toda la sesión) ───────────
+    // ── Recursos compartidos ──────────────────────────────────
     SistemaParticulas particulas;
     Camara            camara(3840.f * 4, (float)ALTO_VENTANA);
     HUD               hud(ventana);
@@ -65,17 +67,15 @@ int main()
     if (!fuentePausa.loadFromFile("assets/fonts/Rajdhani-Bold.ttf"))
         fuentePausa.loadFromFile("assets/fonts/Ring.ttf");
     bool musicaMuteada = false;
-    Pausa pausa(ventana, musica, fuentePausa);
+    Pausa pausa(ventana, audio.getMusicaRef(), fuentePausa);
 
-    // Datos de personajes elegidos (persisten entre partidas del mismo run)
     DatosPersonajeElegido datosJugador[2] = { resMenu.datosJ1, resMenu.datosJ2 };
 
-    // ── Estado del juego ──────────────────────────────────────
+    // ── Box2D ─────────────────────────────────────────────────
     b2WorldDef wd  = b2DefaultWorldDef();
     wd.gravity     = {0.f, GRAVEDAD};
     b2WorldId worldId = b2CreateWorld(&wd);
 
-    // Punteros opcionales — se crean/destruyen en cada partida
     std::unique_ptr<Mapa>   mapa;
     std::vector<std::unique_ptr<Jugador>> jugadores;
     std::vector<b2BodyId>   listaGancheables;
@@ -92,36 +92,26 @@ int main()
     float acumulador = 0.f;
     float timerActualizaGancheables = 0.f;
 
-    // ── Función de reinicio limpio ────────────────────────────
-    // Orden correcto: destruir jugadores → destruir mapa → destruir mundo
-    //                 → crear mundo → crear mapa → crear jugadores
+    // ── Reinicio limpio ───────────────────────────────────────
     auto reiniciarPartida = [&]() {
-        // 1. Soltar ganchos y destruir jugadores primero
-        jugadores.clear();          // llama a ~Jugador que destruye bodies/joints
+        jugadores.clear();
         listaGancheables.clear();
-
-        // 2. Destruir el mapa (sus bodies ya están en el mundo que aún existe)
-        mapa.reset();               // llama ~Mapa → destruirFisicas() sobre mundo vivo
-
-        // 3. Ahora sí destruir el mundo (ya sin bodies huérfanos)
+        mapa.reset();
         b2DestroyWorld(worldId);
-
-        // 4. Crear mundo nuevo
         worldId = b2CreateWorld(&wd);
+        mapa    = std::make_unique<Mapa>(worldId);
 
-        // 5. Crear mapa nuevo
-        mapa = std::make_unique<Mapa>(worldId);
-
-        // 6. Resetear sistemas
         particulas.limpiar();
         camara.resetearAlInicio();
-        vidas      = {VIDAS_INICIALES, VIDAS_INICIALES};
-        vivoAntes  = {true, true};
-        timerGracia = GRACIA_INICIO;
+        vidas        = {VIDAS_INICIALES, VIDAS_INICIALES};
+        vivoAntes    = {true, true};
+        timerGracia  = GRACIA_INICIO;
         ganadorFinal = -1;
         hud.ocultarVictoria();
 
-        // 7. Crear jugadores con personajes elegidos
+        // Detener victoria y retomar música si estaba sonando
+        audio.detenerVictoria();
+
         jugadores.push_back(std::make_unique<Jugador>(
             worldId, mapa->spawnJugador(0, 0.f), 0, particulas,
             datosJugador[0].sprite, datosJugador[0].color));
@@ -135,7 +125,6 @@ int main()
         estadoJuego = Estado::Conteo;
     };
 
-    // Configurar HUD con personajes del menú
     auto aplicarPersonajesAlHUD = [&]() {
         hud.configurarPersonaje(0,
             datosJugador[0].color,
@@ -147,19 +136,19 @@ int main()
             datosJugador[1].victory.empty() ? "assets/images/cobalt_victory.png" : datosJugador[1].victory);
     };
 
-    // Primera partida
     aplicarPersonajesAlHUD();
     reiniciarPartida();
 
     // ── Bucle principal ───────────────────────────────────────
     while (ventana.isOpen())
     {
-        // ── Eventos ──────────────────────────────────────────
+        // Alternar música si terminó la pista actual
+        audio.updateMusica();
+
         sf::Event ev;
         while (ventana.pollEvent(ev)) {
             if (ev.type == sf::Event::Closed) ventana.close();
 
-            // ESC abre pausa solo cuando se juega
             if (ev.type == sf::Event::KeyPressed
                 && ev.key.code == sf::Keyboard::Escape
                 && estadoJuego == Estado::Jugando)
@@ -168,20 +157,19 @@ int main()
                 estadoJuego = Estado::Pausado;
             }
 
-            // Pausa maneja sus propios eventos
             if (estadoJuego == Estado::Pausado) {
                 ResultadoPausa rp = pausa.procesarEvento(ev, musicaMuteada);
                 if (rp == ResultadoPausa::Continuar) {
                     estadoJuego = Estado::Jugando;
                 } else if (rp == ResultadoPausa::VolverMenu) {
-                    // Ir al menú a elegir personajes
                     jugadores.clear();
                     listaGancheables.clear();
                     mapa.reset();
                     b2DestroyWorld(worldId);
                     worldId = b2CreateWorld(&wd);
+                    audio.detenerVictoria();
 
-                    Menu menuPausa(ventana, musica);
+                    Menu menuPausa(ventana, audio.getMusicaRef());
                     ResultadoMenu rMenu = menuPausa.ejecutar();
                     if (rMenu.salir || !ventana.isOpen()) { ventana.close(); break; }
 
@@ -248,6 +236,7 @@ int main()
                         j->aplicarFreno(CAJA_FRENO);
                         c.activa = false; c.timerRespawn = 0.f;
                         particulas.emitir(c.posBase, TipoParticula::Chispa, sf::Color(255,220,80), 15);
+                        audio.playCaja();   // ← sonido de caja
                     }
                 }
             }
@@ -262,6 +251,7 @@ int main()
                         if (bj.intersects(p.rectVisual.getGlobalBounds())) {
                             j->eliminar();
                             particulas.emitir(j->getPosicion(), TipoParticula::Chispa, sf::Color(255,60,60), 25);
+                            audio.playDeath();  // ← sonido de muerte por pico
                         }
                     }
                 }
@@ -279,6 +269,7 @@ int main()
                     if (!j->estaMuerto() && camara.fueraDePantalla(j->getPosicion())) {
                         j->eliminar();
                         particulas.emitir(j->getPosicion(), TipoParticula::Confetti, sf::Color::White, 30);
+                        audio.playDeath();  // ← sonido de muerte por caída
                     }
                 }
             }
@@ -301,6 +292,7 @@ int main()
                 if (vidas[idMuerto] <= 0) {
                     ganadorFinal = idSob;
                     hud.mostrarFinJuego(ganadorFinal);
+                    audio.iniciarVictoria();  // ← musica de victoria
                     estadoJuego = Estado::FinJuego;
                 } else {
                     hud.mostrarSobrevivio(idSob);
@@ -353,23 +345,21 @@ int main()
         // ── FIN DE JUEGO ──────────────────────────────────────
         else if (estadoJuego == Estado::FinJuego)
         {
-            // Física congelada. Space/Enter = revancha, Esc = menú
             bool conf   = accionConfirmar();
             bool escNow = sf::Keyboard::isKeyPressed(sf::Keyboard::Escape);
 
             if (conf && !confirmarPress) {
-                // Revancha directa con los mismos personajes
-                reiniciarPartida();
+                reiniciarPartida();   // detiene victoria internamente
                 confirmarPress = false;
             } else if (escNow && !confirmarPress) {
-                // Ir al menú a elegir personaje
                 jugadores.clear();
                 listaGancheables.clear();
                 mapa.reset();
                 b2DestroyWorld(worldId);
                 worldId = b2CreateWorld(&wd);
+                audio.detenerVictoria();
 
-                Menu menuRematch(ventana, musica);
+                Menu menuRematch(ventana, audio.getMusicaRef());
                 ResultadoMenu res2 = menuRematch.ejecutar();
                 if (res2.salir || !ventana.isOpen()) break;
 
@@ -415,7 +405,6 @@ int main()
         ventana.display();
     }
 
-    // Limpieza ordenada al salir
     jugadores.clear();
     listaGancheables.clear();
     mapa.reset();
