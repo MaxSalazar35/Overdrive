@@ -1,33 +1,44 @@
 // ============================================================
-// Gancho.cpp — Overdrive (Box2D v3)
+// Gancho.cpp — Overdrive (Box2D v3)  v4
 //
 // MECÁNICA:
-//  - Disparo diagonal: ángulo GANCHO_ANGULO (70°) hacia arriba-adelante
-//    según la dirección que mira el jugador. Sin límite horizontal.
-//  - Solo se ancla en el techo continuo (y <= GANCHO_Y_MAX_CONTACTO = 25).
-//  - Al anclar: DistanceJoint como péndulo + impulso retráctil continuo
-//    que jala al jugador hacia el punto de anclaje (GANCHO_RETRACCION px/s).
-//  - Longitud mínima GANCHO_LONG_MIN: el jugador queda cerca del techo
-//    y sale disparado con la velocidad acumulada al soltar.
+//  - Disparo siempre hacia el techo. Estrategia de 3 rayos:
+//      1. Recto hacia arriba (90°) — alcance directo
+//      2. 30° a la derecha del vertical (hacia adelante)
+//      3. 30° a la izquierda del vertical (hacia atrás)
+//  - Solo se ancla en el techo continuo: point.y <= GANCHO_Y_MAX_CONTACTO
+//    y normal.y < -0.5 (cara mirando hacia abajo).
+//  - Al anclar: DistanceJoint como péndulo + impulso retráctil.
 // ============================================================
 #include "Gancho.hpp"
 #include <cmath>
 
-// ── Raycast callback — SOLO techo (y <= GANCHO_Y_MAX_CONTACTO) ──────────
+static constexpr float PI = 3.14159265f;
+
+// ── Raycast callback — SOLO techo (y <= GANCHO_Y_MAX_CONTACTO) ─────────
 static float raycastCallback(b2ShapeId shapeId, b2Vec2 point,
-                              b2Vec2 /*normal*/, float fraction, void* context)
+                              b2Vec2 normal, float fraction, void* context)
 {
     RaycastCtx* ctx = static_cast<RaycastCtx*>(context);
+
     if (b2Shape_IsSensor(shapeId)) return -1.f;
     b2BodyId bodyId = b2Shape_GetBody(shapeId);
     if (b2Body_GetType(bodyId) == b2_dynamicBody) return -1.f;
 
-    // Solo el techo continuo (y = 0..20)
+    // Cara que mira hacia abajo (normal apunta hacia abajo, y negativo = arriba en SFML)
+    if (normal.y > -0.5f) return -1.f;
+
+    // Solo el techo continuo (y = 0..GANCHO_Y_MAX_CONTACTO)
     if (point.y > GANCHO_Y_MAX_CONTACTO) return -1.f;
 
-    ctx->golpeo         = true;
-    ctx->puntoContacto  = point;
-    ctx->cuerpoGolpeado = bodyId;
+    // Guardar el impacto más cercano
+    if (!ctx->golpeo || fraction < ctx->fraccionMin) {
+        ctx->golpeo         = true;
+        ctx->fraccionMin    = fraction;
+        ctx->puntoContacto  = point;
+        ctx->cuerpoGolpeado = bodyId;
+    }
+    // Devolver fraction para que el raycast siga buscando algo más cercano
     return fraction;
 }
 
@@ -46,32 +57,39 @@ Gancho::Gancho(b2WorldId worldId, b2BodyId cuerpoJugador)
 Gancho::~Gancho() { destruirCuerda(); }
 
 // ── disparar ─────────────────────────────────────────────────
-// mirandoDerecha determina el sesgo horizontal del rayo.
 bool Gancho::disparar(sf::Vector2f /*dir*/, bool mirandoDerecha)
 {
-    // Si ya está anclado, soltar
     if (estado == EstadoGancho::Anclado) { soltar(); return false; }
 
     b2Vec2 posJ = b2Body_GetPosition(cuerpoJugador);
+    float  L    = GANCHO_LONGITUD;
 
-    // Ángulo diagonal: 70° desde horizontal, sesgado hacia donde mira el jugador.
-    // cos(70°) ≈ 0.342 (componente horizontal), sin(70°) ≈ 0.940 (componente vertical)
-    float dirX = mirandoDerecha ?  std::cos(GANCHO_ANGULO)
-                                : -std::cos(GANCHO_ANGULO);
-    float dirY = -std::sin(GANCHO_ANGULO);  // negativo = hacia arriba en coordenadas SFML
+    // Helper: lanza un rayo con una dirección (dx,dy) normalizada
+    auto lanzar = [&](float dx, float dy) -> bool {
+        b2Vec2 dest = { posJ.x + dx * L, posJ.y + dy * L };
+        RaycastCtx ctx; ctx.gancheables = gancheables;
+        b2World_CastRay(worldId, posJ, dest, b2DefaultQueryFilter(),
+                        raycastCallback, &ctx);
+        if (ctx.golpeo) {
+            anclarEn({ctx.puntoContacto.x, ctx.puntoContacto.y});
+            return true;
+        }
+        return false;
+    };
 
-    b2Vec2 origen  = posJ;
-    b2Vec2 destino = {posJ.x + dirX * GANCHO_LONGITUD,
-                      posJ.y + dirY * GANCHO_LONGITUD};
+    // Rayo 1: recto hacia arriba (90° desde horizontal)
+    if (lanzar(0.f, -1.f)) return true;
 
-    RaycastCtx ctx; ctx.gancheables = gancheables;
-    b2World_CastRay(worldId, origen, destino, b2DefaultQueryFilter(),
-                    raycastCallback, &ctx);
+    // Rayo 2: 30° a la derecha del vertical (60° desde horizontal)
+    //   sin(60°) ≈ 0.866 (componente vertical), cos(60°) = 0.5 (horizontal)
+    float ang60 = 60.f * PI / 180.f;
+    float sign  = mirandoDerecha ? 1.f : -1.f;
+    if (lanzar(sign * std::cos(ang60), -std::sin(ang60))) return true;
 
-    if (!ctx.golpeo) return false;
+    // Rayo 3: 30° al otro lado (opuesto a la dirección de marcha)
+    if (lanzar(-sign * std::cos(ang60), -std::sin(ang60))) return true;
 
-    anclarEn({ctx.puntoContacto.x, ctx.puntoContacto.y});
-    return true;
+    return false;
 }
 
 // ── soltar ───────────────────────────────────────────────────
@@ -87,10 +105,7 @@ void Gancho::update(float dt)
 {
     if (estado == EstadoGancho::Inactivo) return;
 
-    // ── Retracción activa: impulso hacia el punto de anclaje ──────────────
-    // Jala al jugador hacia el techo progresivamente.
-    // El DistanceJoint actúa como tope de longitud máxima (péndulo),
-    // el impulso hace que el jugador suba activamente.
+    // Retracción: impulso hacia el punto de anclaje
     if (longitudActual > GANCHO_LONG_MIN) {
         b2Vec2 posJ = b2Body_GetPosition(cuerpoJugador);
         float  dx   = puntoAnclaje.x - posJ.x;
@@ -110,14 +125,13 @@ void Gancho::update(float dt)
         if (longitudActual < GANCHO_LONG_MIN)
             longitudActual = GANCHO_LONG_MIN;
 
-        // Acortar el joint para que la cuerda visual también se recoja
         if (jointValido && b2Joint_IsValid(joint))
             b2DistanceJoint_SetLengthRange(joint,
                                            GANCHO_LONG_MIN * 0.5f,
                                            longitudActual);
     }
 
-    // ── Visual ───────────────────────────────────────────────────────────
+    // Visual
     b2Vec2 posJ = b2Body_GetPosition(cuerpoJugador);
     lineaCuerda[0].position = {posJ.x, posJ.y};
     lineaCuerda[0].color    = sf::Color(220, 180, 30, 220);
@@ -142,24 +156,21 @@ sf::Vector2f Gancho::getPuntoAnclaje() const { return puntoAnclaje; }
 // ── anclarEn ─────────────────────────────────────────────────
 void Gancho::anclarEn(sf::Vector2f punto)
 {
-    puntoAnclaje   = punto;
-    estado         = EstadoGancho::Anclado;
+    puntoAnclaje  = punto;
+    estado        = EstadoGancho::Anclado;
 
-    // Cuerpo estático en el punto de anclaje
     b2BodyDef bd = b2DefaultBodyDef();
     bd.type      = b2_staticBody;
     bd.position  = {punto.x, punto.y};
-    bodyAnclaje   = b2CreateBody(worldId, &bd);
+    bodyAnclaje  = b2CreateBody(worldId, &bd);
     anclajeValido = true;
 
-    // Distancia inicial
     b2Vec2 posJ = b2Body_GetPosition(cuerpoJugador);
     float  dx   = punto.x - posJ.x;
     float  dy   = punto.y - posJ.y;
     float  dist = std::sqrt(dx * dx + dy * dy);
     longitudActual = dist;
 
-    // Joint de distancia (péndulo elástico)
     b2DistanceJointDef jd = b2DefaultDistanceJointDef();
     jd.bodyIdA      = cuerpoJugador;
     jd.bodyIdB      = bodyAnclaje;
@@ -173,7 +184,7 @@ void Gancho::anclarEn(sf::Vector2f punto)
     jd.enableSpring = true;
     jd.enableLimit  = true;
 
-    joint      = b2CreateDistanceJoint(worldId, &jd);
+    joint       = b2CreateDistanceJoint(worldId, &jd);
     jointValido = true;
 }
 
