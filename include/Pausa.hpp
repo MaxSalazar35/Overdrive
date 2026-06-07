@@ -1,213 +1,196 @@
 #pragma once
 // ============================================================
-// Pausa.hpp — Overdrive
-// Menú de pausa en partida. Se activa con Escape.
-// Opciones: Continuar / Cómo Jugar / Ajustes / Volver al Menú
+// Pausa.hpp — Overdrive  v2
+// Menú de pausa in-game.
+// - Se abre con ESC (evento KeyPressed desde main)
+// - Opciones: CONTINUAR / MÚSICA / VOLVER AL MENÚ
+// - Usa eventos discretos (no polling) para evitar el bug
+//   de que ESC abra y cierre la pausa en el mismo frame.
 // ============================================================
 #include <SFML/Graphics.hpp>
 #include <SFML/Audio.hpp>
-#include <string>
 #include <cmath>
+#include <string>
 
-enum class ResultadoPausa {
-    Ninguno,       // sigue pausado
-    Continuar,     // cerrar pausa, seguir jugando
-    VolverMenu     // salir al menú principal
-};
+enum class ResultadoPausa { Ninguno, Continuar, VolverMenu };
 
 class Pausa {
 public:
     Pausa(sf::RenderWindow& v, sf::Music& m, sf::Font& f)
-        : ventana(v), musica(m), fuente(f)
-    {}
+        : ventana(v), musica(m), fuente(f) {}
 
     bool estaActivo() const { return activo; }
 
-    void abrir()  {
-        activo = true;
-        opcion = 0;
-        tiempoApertura = 0.f;
-        // Guardar estado de música
-        musica.setVolume(20.f);   // bajar música al pausar
+    void abrir() {
+        activo     = true;
+        opcion     = 0;
+        tApertura  = 0.f;
+        // Bajar volumen al pausar (si no está muteado)
+        if (!muted) musica.setVolume(20.f);
     }
+
     void cerrar() {
         activo = false;
-        musica.setVolume(50.f);   // restaurar volumen
+        // Restaurar volumen al cerrar
+        if (!muted) musica.setVolume(50.f);
     }
 
-    // Llama en el bucle principal cuando está pausado.
-    // Devuelve la acción elegida.
-    ResultadoPausa update(float dt, bool& musicaMuteada, bool& pantallaCompleta) {
+    // Procesa un único evento de teclado. Llamar desde el pollEvent de main.
+    // Devuelve la acción resultante.
+    ResultadoPausa procesarEvento(const sf::Event& ev, bool& musicaMuteada) {
         if (!activo) return ResultadoPausa::Ninguno;
-        tiempoApertura += dt;
+        if (ev.type != sf::Event::KeyPressed) return ResultadoPausa::Ninguno;
 
-        // Navegación
-        bool arriba  = sf::Keyboard::isKeyPressed(sf::Keyboard::Up)
-                    || sf::Keyboard::isKeyPressed(sf::Keyboard::W);
-        bool abajo   = sf::Keyboard::isKeyPressed(sf::Keyboard::Down)
-                    || sf::Keyboard::isKeyPressed(sf::Keyboard::S);
-        bool enter   = sf::Keyboard::isKeyPressed(sf::Keyboard::Return)
-                    || sf::Keyboard::isKeyPressed(sf::Keyboard::Space);
-        bool esc     = sf::Keyboard::isKeyPressed(sf::Keyboard::Escape);
+        // Bloqueo mínimo de apertura para ignorar el ESC que la abrió
+        if (tApertura < 0.1f) return ResultadoPausa::Ninguno;
 
-        if (arriba && !arribaPress && tiempoApertura > 0.15f)
-            opcion = (opcion - 1 + NUM_OPCIONES) % NUM_OPCIONES;
-        if (abajo && !abajoPress && tiempoApertura > 0.15f)
-            opcion = (opcion + 1) % NUM_OPCIONES;
+        switch (ev.key.code) {
+            case sf::Keyboard::Up:
+            case sf::Keyboard::W:
+                opcion = (opcion - 1 + N) % N;
+                break;
 
-        ResultadoPausa res = ResultadoPausa::Ninguno;
+            case sf::Keyboard::Down:
+            case sf::Keyboard::S:
+                opcion = (opcion + 1) % N;
+                break;
 
-        if (enter && !enterPress && tiempoApertura > 0.15f) {
-            switch (opcion) {
-                case 0: cerrar(); res = ResultadoPausa::Continuar;   break;
-                case 1: // Música
+            case sf::Keyboard::Return:
+            case sf::Keyboard::Space:
+                if (opcion == 0) {
+                    cerrar();
+                    return ResultadoPausa::Continuar;
+                } else if (opcion == 1) {
+                    // Toggle música
                     musicaMuteada = !musicaMuteada;
+                    muted         = musicaMuteada;
                     musica.setVolume(musicaMuteada ? 0.f : 20.f);
-                    break;
-                case 2: // Fullscreen
-                    pantallaCompleta = !pantallaCompleta;
-                    if (pantallaCompleta)
-                        ventana.create(sf::VideoMode::getDesktopMode(),
-                                       "Overdrive", sf::Style::Fullscreen);
-                    else
-                        ventana.create(sf::VideoMode(1280, 720),
-                                       "Overdrive", sf::Style::Close | sf::Style::Titlebar);
-                    break;
-                case 3: cerrar(); res = ResultadoPausa::VolverMenu;  break;
-            }
-        }
+                } else if (opcion == 2) {
+                    cerrar();
+                    return ResultadoPausa::VolverMenu;
+                }
+                break;
 
-        if (esc && !escPress && tiempoApertura > 0.15f) {
-            cerrar();
-            res = ResultadoPausa::Continuar;
-        }
+            case sf::Keyboard::Escape:
+                cerrar();
+                return ResultadoPausa::Continuar;
 
-        arribaPress = arriba;
-        abajoPress  = abajo;
-        enterPress  = enter;
-        escPress    = esc;
-        return res;
+            default: break;
+        }
+        return ResultadoPausa::Ninguno;
     }
 
-    void draw(bool musicaMuteada, bool pantallaCompleta) {
-        if (!activo) return;
+    // Avanza el timer de apertura (para el bloqueo anti-rebote)
+    void update(float dt) {
+        if (activo) tApertura += dt;
+    }
 
+    void draw(bool musicaMuteada) {
+        if (!activo) return;
         float W = (float)ventana.getSize().x;
         float H = (float)ventana.getSize().y;
 
-        // ── Overlay oscuro animado (aparece progresivamente) ──
-        float fade = std::min(1.f, tiempoApertura / 0.2f);
-        sf::RectangleShape overlay({W, H});
-        overlay.setFillColor(sf::Color(0, 0, 0, (sf::Uint8)(160 * fade)));
-        ventana.draw(overlay);
+        // Overlay oscuro con fade-in
+        float fade = std::min(1.f, tApertura / 0.2f);
+        sf::RectangleShape ov({W, H});
+        ov.setFillColor(sf::Color(0, 0, 0, (sf::Uint8)(160 * fade)));
+        ventana.draw(ov);
 
-        // ── Panel central ─────────────────────────────────────
-        float pw = 400.f, ph = 340.f;
-        float px = (W - pw) * 0.5f;
-        float py = (H - ph) * 0.5f;
+        // Panel con animación de escala
+        float pw = 420.f, ph = 295.f;
+        float sc = 0.85f + 0.15f * std::min(1.f, tApertura / 0.18f);
+        float pws = pw * sc, phs = ph * sc;
+        float pxs = (W - pws) * 0.5f, pys = (H - phs) * 0.5f;
 
-        float escPanel = 0.85f + 0.15f * std::min(1.f, tiempoApertura / 0.18f);
-        float pwS = pw * escPanel, phS = ph * escPanel;
-        float pxS = (W - pwS) * 0.5f, pyS = (H - phS) * 0.5f;
-
-        // Fondo
-        sf::RectangleShape panel({pwS, phS});
-        panel.setPosition(pxS, pyS);
-        panel.setFillColor(sf::Color(8, 10, 24, 230));
+        sf::RectangleShape panel({pws, phs});
+        panel.setPosition(pxs, pys);
+        panel.setFillColor(sf::Color(8, 10, 24, 235));
         panel.setOutlineColor(sf::Color(0, 200, 255, 200));
         panel.setOutlineThickness(2.f);
         ventana.draw(panel);
 
-        // Línea superior neón
-        sf::RectangleShape linSup({pwS - 4, 3.f});
-        linSup.setPosition(pxS + 2, pyS + 2);
-        linSup.setFillColor(sf::Color(0, 220, 255));
-        ventana.draw(linSup);
+        // Barra superior neón
+        sf::RectangleShape bar({pws - 4, 3.f});
+        bar.setPosition(pxs + 2, pys + 2);
+        bar.setFillColor(sf::Color(0, 220, 255));
+        ventana.draw(bar);
 
-        // ── Título PAUSA ───────────────────────────────────────
-        float pulso = 0.5f + 0.5f * std::sin(tiempoApertura * 3.5f);
+        // Título
+        float pulso = 0.5f + 0.5f * std::sin(tApertura * 3.5f);
         sf::Text titulo;
         titulo.setFont(fuente);
-        titulo.setCharacterSize(42);
+        titulo.setCharacterSize(44);
         titulo.setFillColor(sf::Color(0, (sf::Uint8)(180 + 75 * pulso), 255));
         titulo.setString("PAUSA");
         titulo.setLetterSpacing(4.f);
-        sf::FloatRect b = titulo.getLocalBounds();
-        titulo.setOrigin(b.left + b.width * 0.5f, b.top);
-        titulo.setPosition(W * 0.5f, pyS + 18.f);
+        sf::FloatRect tb = titulo.getLocalBounds();
+        titulo.setOrigin(tb.left + tb.width * 0.5f, tb.top);
+        titulo.setPosition(W * 0.5f, pys + 14.f);
         ventana.draw(titulo);
 
-        // Línea bajo título
-        sf::RectangleShape linTit({pwS - 40.f, 1.5f});
-        linTit.setPosition(pxS + 20, pyS + 68);
-        linTit.setFillColor(sf::Color(0, 180, 255, 150));
-        ventana.draw(linTit);
+        sf::RectangleShape sep({pws - 40.f, 1.5f});
+        sep.setPosition(pxs + 20, pys + 66);
+        sep.setFillColor(sf::Color(0, 180, 255, 150));
+        ventana.draw(sep);
 
-        // ── Opciones ──────────────────────────────────────────
-        struct Opcion { std::string label; std::string valor; };
-        Opcion opciones[NUM_OPCIONES] = {
-            {"CONTINUAR",        ""},
-            {"MUSICA",           musicaMuteada    ? "MUTED" : "ON"},
-            {"PANTALLA COMPLETA",pantallaCompleta ? "ON"    : "OFF"},
-            {"VOLVER AL MENU",   ""},
+        // Opciones
+        struct OpInfo { std::string label; std::string valor; };
+        OpInfo ops[N] = {
+            {"CONTINUAR",      ""},
+            {"MUSICA",         musicaMuteada ? "MUTED" : "ON"},
+            {"VOLVER AL MENU", ""},
         };
 
-        float startY = pyS + 82.f;
-        float step   = 55.f;
-
-        for (int i = 0; i < NUM_OPCIONES; ++i) {
+        float startY = pys + 82.f, step = 56.f;
+        for (int i = 0; i < N; ++i) {
             bool sel = (i == opcion);
-            float y  = startY + i * step;
+            float y = startY + i * step;
 
-            // Fondo de opción seleccionada
             if (sel) {
-                sf::RectangleShape hl({pwS - 40.f, 42.f});
-                hl.setPosition(pxS + 20, y - 4);
+                sf::RectangleShape hl({pws - 40.f, 42.f});
+                hl.setPosition(pxs + 20, y - 4);
                 hl.setFillColor(sf::Color(0, 180, 255, 25));
                 hl.setOutlineColor(sf::Color(0, 200, 255, 180));
                 hl.setOutlineThickness(1.f);
                 ventana.draw(hl);
 
-                // Acento lateral
-                sf::RectangleShape acento({4.f, 42.f});
-                acento.setPosition(pxS + 20, y - 4);
-                acento.setFillColor(sf::Color(0, 220, 255));
-                ventana.draw(acento);
+                sf::RectangleShape ac({4.f, 42.f});
+                ac.setPosition(pxs + 20, y - 4);
+                ac.setFillColor(sf::Color(0, 220, 255));
+                ventana.draw(ac);
             }
 
-            // Texto de la opción
-            sf::Text txt;
-            txt.setFont(fuente);
-            txt.setCharacterSize(20);
-            txt.setFillColor(sel ? sf::Color(0, 220, 255) : sf::Color(160, 170, 200));
-            txt.setString(opciones[i].label);
-            txt.setPosition(pxS + 36.f, y + 4.f);
-            ventana.draw(txt);
+            sf::Text tx;
+            tx.setFont(fuente);
+            tx.setCharacterSize(21);
+            tx.setFillColor(sel ? sf::Color(0, 220, 255) : sf::Color(160, 170, 200));
+            tx.setString(ops[i].label);
+            tx.setPosition(pxs + 36.f, y + 4.f);
+            ventana.draw(tx);
 
-            // Valor a la derecha (para toggles)
-            if (!opciones[i].valor.empty()) {
+            if (!ops[i].valor.empty()) {
                 sf::Text val;
                 val.setFont(fuente);
-                val.setCharacterSize(18);
-                bool on = (opciones[i].valor == "ON");
+                val.setCharacterSize(19);
+                bool on = (ops[i].valor == "ON");
                 val.setFillColor(on ? sf::Color(80, 255, 140) : sf::Color(120, 120, 150));
-                val.setString(opciones[i].valor);
+                val.setString(ops[i].valor);
                 sf::FloatRect vb = val.getLocalBounds();
                 val.setOrigin(vb.left + vb.width, vb.top);
-                val.setPosition(pxS + pwS - 28.f, y + 6.f);
+                val.setPosition(pxs + pws - 28.f, y + 6.f);
                 ventana.draw(val);
             }
         }
 
-        // ── Pie ─────────────────────────────────────────────
+        // Pie
         sf::Text pie;
         pie.setFont(fuente);
         pie.setCharacterSize(13);
         pie.setFillColor(sf::Color(70, 80, 110));
-        pie.setString("W/S NAVEGAR  |  ENTER SELECCIONAR  |  ESC CONTINUAR");
+        pie.setString("W/S  NAVEGAR    ENTER  SELECCIONAR    ESC  CONTINUAR");
         sf::FloatRect pb = pie.getLocalBounds();
         pie.setOrigin(pb.left + pb.width * 0.5f, pb.top);
-        pie.setPosition(W * 0.5f, pyS + phS - 26.f);
+        pie.setPosition(W * 0.5f, pys + phs - 22.f);
         ventana.draw(pie);
     }
 
@@ -216,14 +199,10 @@ private:
     sf::Music&        musica;
     sf::Font&         fuente;
 
-    bool  activo         = false;
-    int   opcion         = 0;
-    float tiempoApertura = 0.f;
+    bool  activo    = false;
+    bool  muted     = false;
+    int   opcion    = 0;
+    float tApertura = 0.f;
 
-    bool arribaPress = false;
-    bool abajoPress  = false;
-    bool enterPress  = false;
-    bool escPress    = false;
-
-    static constexpr int NUM_OPCIONES = 4;
+    static constexpr int N = 3;
 };
