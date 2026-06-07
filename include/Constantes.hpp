@@ -27,7 +27,10 @@ constexpr float JUG_ALTO          = 70.0f;
 
 // ── Gancho ───────────────────────────────────────────────────
 // Longitud del rayo diagonal (px). A 70° alcanza el techo desde cualquier plataforma.
-constexpr float GANCHO_LONGITUD       = 580.0f;
+// ── Gancho ───────────────────────────────────────────────────
+// Longitud del rayo. El jugador spawn en y≈580, techo en y=20 → 560px.
+// Aumentamos a 650 para garantizar alcance incluso en ángulos diagonales.
+constexpr float GANCHO_LONGITUD       = 650.0f;
 // Ángulo del disparo en radianes desde horizontal (70° = muy vertical pero con sesgo)
 constexpr float GANCHO_ANGULO         = 1.3963f;   // 80° en rad
 // Umbral Y máximo del punto de contacto (solo el techo continuo en y=0..20)
@@ -52,9 +55,9 @@ constexpr float ITEM_RESPAWN    = 9.0f;
 constexpr int   RONDAS_GANAR         = 3;
 constexpr float PAUSA_ENTRE_RONDAS   = 3.0f;
 
-// ── Sprites (spritesheet 1896x848, celdas 316x212) ──────────
-constexpr int   FRAME_W         = 316;
-constexpr int   FRAME_H         = 212;
+// ── Sprites (spritesheet 1200x880, celdas 200x220) ──────────
+constexpr int   FRAME_W         = 200;
+constexpr int   FRAME_H         = 220;
 constexpr int   FILA_IDLE       = 0;
 constexpr int   FILA_CORRER     = 1;
 constexpr int   FILA_SALTAR     = 2;
