@@ -18,7 +18,9 @@ enum AnimID { ANIM_IDLE=0, ANIM_CORRER, ANIM_SALTAR, ANIM_DESLIZAR };
 class Jugador {
 public:
     Jugador(b2WorldId worldId, sf::Vector2f posInicial,
-            int idJugador, SistemaParticulas& particulas);
+            int idJugador, SistemaParticulas& particulas,
+            const std::string& rutaSprite = "",
+            sf::Color colorPersonaje      = sf::Color(80, 180, 255));
     ~Jugador();
 
     void procesarEntrada(float dt);
@@ -79,6 +81,7 @@ private:
     sf::Sprite  sprite;
     Animacion   anim;
     InputHandler input;
+    sf::Color  colorPersonaje;   // color del personaje elegido
     SistemaParticulas& particulas;
 
     sf::Clock relojEstela;
