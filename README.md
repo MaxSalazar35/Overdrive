@@ -150,9 +150,9 @@ Distribuidas por el nivel, flotan y rotan. Al recogerlas otorgan un power-up (en
 
 ### 👥 Equipo
 
-- **Líder**: Nombre Completo (@usuario-github)
-- **Integrante 2**: Nombre Completo (@usuario-github)
-- **Integrante 3**: Nombre Completo (@usuario-github)
+- **Integrantes**:
+  Dafne Jackeline Reynoso Sauceda (@dafners)
+  Arturo Maximiliano Salazar Sanchez (@MaxSalazar35)
 
 ---
 
@@ -172,7 +172,8 @@ Distribuidas por el nivel, flotan y rotan. Al recogerlas otorgan un power-up (en
 ### 📜 Créditos
 
 - Inspirado en **SpeedRunners** de tinyBuild (mecánicas originales, arte y código propios)
-- Música: [mureka.ai]
+- Música: [mureka.ai](https://mureka.ai)
+- Efectos de sonido: [Pixabay](https://pixabay.com/sound-effects/) — licencia libre de derechos
 - Fuentes: [dafont.com](https://www.dafont.com/es/)
 - Motor de física: [Box2D](https://box2d.org/)
 - Gráficos/Audio: [SFML](https://www.sfml-dev.org/)
@@ -191,7 +192,7 @@ Distribuidas por el nivel, flotan y rotan. Al recogerlas otorgan un power-up (en
 → Conecta el control **antes** de iniciar el juego. SFML detecta joysticks al inicio.
 
 **La música no suena**
-→ Coloca un archivo `.ogg` en `assets/music/musica.ogg`. MP3 no es soportado por SFML.
+→ Coloca un archivo `.ogg` en `assets/music/musica.ogg`. MP3 no es soportado por SFML. Los efectos de sonido van en `assets/sounds/`.
 
 ---
 
