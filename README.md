@@ -29,6 +29,7 @@ make run
 # Limpiar
 make clean
 
+````
 ---
 
 ## 🎮 Descripción del Juego
