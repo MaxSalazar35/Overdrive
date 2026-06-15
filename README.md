@@ -15,52 +15,9 @@ Corre, usa el gancho, deja atrás a tu rival y que no te quede fuera de la panta
 
 ---
 
-## 🗂️ Estructura del Proyecto
-
-```
-Overdrive/
-├── .github/workflows/publish.yml   ← CI/CD para CETUS
-├── src/
-│   ├── main.cpp        ← Game loop principal
-│   ├── Jugador.cpp     ← Física, animaciones, entrada
-│   ├── Gancho.cpp      ← Grappling hook con raycast
-│   ├── Camara.cpp      ← Cámara dinámica
-│   ├── Mapa.cpp        ← Nivel, plataformas, parallax
-│   └── HUD.cpp         ← UI, velocímetro, victoria
-├── include/
-│   ├── Constantes.hpp  ← Todos los valores del juego
-│   ├── Animacion.hpp   ← Componente de animación por spritesheet
-│   ├── Input.hpp       ← Teclado + gamepad unificados
-│   ├── Particulas.hpp  ← Sistema de partículas
-│   ├── Jugador.hpp
-│   ├── Gancho.hpp
-│   ├── Camara.hpp
-│   ├── Mapa.hpp
-│   └── HUD.hpp
-├── assets/
-│   ├── images/
-│   │   ├── jugador1.png      ← Spritesheet J1 (768×512, fondo transparente)
-│   │   ├── jugador2.png      ← Spritesheet J2 (768×512, fondo transparente)
-│   │   ├── bg_layer1.png     ← Fondo parallax — capa lejana
-│   │   ├── bg_layer2.png     ← Fondo parallax — capa media
-│   │   └── bg_layer3.png     ← Fondo parallax — primer plano
-│   ├── music/
-│   │   └── musica.ogg
-│   └── fonts/
-│       └── fuente.ttf
-├── bin/                   ← Ejecutable generado (ignorado por git)
-├── obj/                   ← Objetos compilados (ignorado por git)
-├── gallery/cover.png
-├── screenshots/
-├── video/demo.mp4
-└── makefile
-```
-
----
-
 ## 🚀 Compilar y Ejecutar
 
-Abre una terminal **MSYS2 MINGW64** dentro de VSCode y ejecuta:
+Abre una terminal **MSYS2 MINGW64** y ejecuta:
 
 ```bash
 # Compilar todo
@@ -71,9 +28,6 @@ make run
 
 # Limpiar
 make clean
-```
-
-> ⚠️ La terminal debe ser **MSYS2 MINGW64**, no PowerShell ni CMD.
 
 ---
 
@@ -96,33 +50,21 @@ Todos los jugadores corren por el mismo nivel en circuito. La cámara sigue al q
 | Deslizarse | `S` | `↓` |
 | Gancho | `LShift` | `RShift` |
 
-#### Gamepad (Xbox / PlayStation)
-
-| Acción | Botón |
-|--------|-------|
-| Moverse | Stick izquierdo |
-| Saltar | `A` / Cruz |
-| Deslizarse | `B` / Círculo |
-| Gancho | `LB` / `RB` / L1 / R1 |
-| Pausa | `Start` / `Options` |
-
-El juego detecta automáticamente si hay gamepad conectado y le da prioridad sobre teclado.
-
 ---
 
 ### ⚙️ Mecánicas
 
 **🪝 Grappling Hook**
-El gancho usa raycast instantáneo (no hay bug de "atravesar paredes"). Se dispara en la dirección que miras, con un ángulo de 30° hacia arriba. Al anclarse, una cuerda elástica te jala progresivamente. Presiona el botón de gancho de nuevo para soltarlo.
+El gancho usa raycast instantáneo (no hay bug de "atravesar paredes"). Se dispara en la dirección que miras, con un ángulo de 30° hacia arriba. Al anclarse, una cuerda elástica te jala progresivamente. Presiona el botón de gancho de nuevo para soltarlo. Solamente se activa cuando el jugador alcanza una altitud requerida.
 
 **💨 Sistema de velocidad y aceleración**
-La aceleración es continua mientras corres. Hay poca fricción en el aire para mantener el momentum. Las rampas tienen fricción casi nula para impulsar al jugador.
+La aceleración es continua mientras corres. Hay poca fricción en el aire para mantener el momentum. Las rampas resbalan al jugador.
 
 **🎥 Cámara dinámica**
 La cámara sigue al líder con interpolación suave. El jugador que queda 80px fuera del borde izquierdo es eliminado automáticamente.
 
-**📦 Cajas de items**
-Distribuidas por el nivel, flotan y rotan. Al recogerlas otorgan un power-up (en desarrollo).
+**📦 Cajas**
+Distribuidas por el nivel, flotan y rotan. Al recogerlas te hacen frenar.
 
 **✨ Partículas**
 - Polvo al correr y aterrizar
@@ -134,8 +76,7 @@ Distribuidas por el nivel, flotan y rotan. Al recogerlas otorgan un power-up (en
 
 ### 🏆 Características
 
-- Multijugador local 2 jugadores (teclado compartido o gamepad)
-- Soporte nativo para Xbox y PlayStation (SFML Joystick API)
+- Multijugador local 2 jugadores (teclado compartido)
 - Física con Box2D — gravedad, fricción, joints de cuerda
 - Gancho con raycast (sin bugs de tunelado)
 - Animaciones por spritesheet: idle, correr, saltar, deslizar
@@ -185,22 +126,7 @@ Distribuidas por el nivel, flotan y rotan. Al recogerlas otorgan un power-up (en
 **No compila — "undefined reference"**
 → Verifica que la terminal sea MSYS2 MINGW64 y que SFML + Box2D estén instalados con `pacman`.
 
-**Los sprites no aparecen**
-→ Coloca los archivos PNG en `assets/images/` con los nombres exactos del README. El juego funciona sin ellos (muestra hitboxes de color) pero sin sprites.
-
-**El gamepad no responde**
-→ Conecta el control **antes** de iniciar el juego. SFML detecta joysticks al inicio.
-
-**La música no suena**
-→ Coloca un archivo `.ogg` en `assets/music/musica.ogg`. MP3 no es soportado por SFML. Los efectos de sonido van en `assets/sounds/`.
+**El gancho no funciona**
+→ Asegúrate de estar lo más alto que puedas para usar el gancho, si lo presionas desde el suelo no funcionará.
 
 ---
-
-## 🔄 Flujo de trabajo (CETUS)
-
-```bash
-git add .
-git commit -m "feat: descripción del cambio"
-git push origin main
-# → GitHub Action publica automáticamente en CETUS
-```
