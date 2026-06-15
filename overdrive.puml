@@ -1,0 +1,243 @@
+@startuml overdrive
+
+class Juego {
+    - Jugador jugador[2]
+    - Mapa mapa
+    - Camara camara
+    - HUD hud
+    - SistemaAudio audio
+    - SistemaParticulas particulas
+    - Menu menu
+    - Pausa pausa
+    - Countdown countdown
+    + void : Iniciar()
+    + void : Actualizar(float)
+    + void : Dibujar()
+}
+
+class Jugador {
+    - int id
+    - bool enSuelo
+    - bool mirandoDerecha
+    - Gancho gancho
+    - Animacion anim
+    - InputHandler input
+    - SistemaParticulas particulas
+    + void : ProcesarEntrada(float)
+    + void : Update(float)
+    + void : Draw(RenderWindow)
+    + void : Resetear(Vector2f)
+    + void : Eliminar()
+    + void : RecibirImpacto()
+    + void : AplicarFreno(float)
+    + Vector2f : GetPosicion()
+    + bool : EstaMuerto()
+}
+
+class Gancho {
+    - EstadoGancho estado
+    - Vector2f puntoAnclaje
+    - float longitudActual
+    + bool : Disparar(Vector2f, bool)
+    + void : Soltar()
+    + void : Update(float)
+    + void : Draw(RenderWindow, Color)
+    + bool : EstaActivo()
+    + Vector2f : GetPuntoAnclaje()
+}
+
+class Animacion {
+    - int estadoActual
+    - int frameActual
+    - bool terminado
+    + void : Configurar(int, int)
+    + void : AgregarEstado(int, FrameAnim)
+    + void : SetEstado(int, bool)
+    + void : Update()
+    + void : CongelarUltimoFrame()
+    + IntRect : GetRect()
+}
+
+class FrameAnim {
+    - int fila
+    - int totalFrames
+    - float tiempoFrame
+    - bool loop
+}
+
+class InputHandler {
+    - int idJugador
+    - bool joyConectado
+    + void : Update()
+    + bool : Presionado(Accion)
+    + float : EjeX()
+    + bool : HayGamepad()
+}
+
+class Mapa {
+    - Plataforma plataformas[]
+    - CajaItem cajas[]
+    + void : Update(float, float)
+    + void : DrawFondo(RenderWindow, float)
+    + void : DrawPlataformas(RenderWindow)
+    + void : DrawItems(RenderWindow)
+    + void : Resetear()
+    + Vector2f : SpawnJugador(int, float)
+}
+
+class Plataforma {
+    - bool valido
+    - bool esPico
+    - bool esGancheable
+    - TipoPlat tipo
+    - int chunk
+}
+
+class CajaItem {
+    - Vector2f posBase
+    - bool activa
+    - float timerRespawn
+    - int chunk
+}
+
+class Camara {
+    - float anchoMundo
+    - float altoMundo
+    - float xObjetivo
+    - float shakeTimer
+    - float shakeIntensidad
+    + void : Update(Vector2f[], float)
+    + void : Aplicar(RenderWindow)
+    + void : RestaurarVista(RenderWindow)
+    + void : ActivarShake(float, float)
+    + bool : FueraDePantalla(Vector2f)
+    + void : ResetearAlInicio()
+}
+
+class HUD {
+    - Panel paneles[]
+    - bool animVictoria
+    - bool finJuego
+    + void : ConfigurarPersonaje(int, Color, string, string)
+    + void : Update(float[], bool[], int[], int, float)
+    + void : Draw(RenderWindow)
+    + void : MostrarSobrevivio(int)
+    + void : MostrarFinJuego(int)
+    + void : OcultarVictoria()
+}
+
+class Panel {
+    - CircleShape circulosVida[]
+    - Text textoNombre
+    - RectangleShape barraVel
+    - CircleShape iconoGancho
+    - Text corona
+}
+
+class SistemaAudio {
+    - bool muted
+    - int pistActual
+    - bool enVictoria
+    + void : IniciarMusica()
+    + void : UpdateMusica()
+    + void : IniciarVictoria()
+    + void : DetenerVictoria()
+    + void : SetMuted(bool)
+    + void : PlayDeath()
+    + void : PlayCaja()
+    + void : PlayOpcion()
+    + void : PlaySeleccionar()
+    + void : PlaySalir()
+}
+
+class SistemaParticulas {
+    - Particula particulas[]
+    + void : Emitir(Vector2f, TipoParticula, Color, int)
+    + void : Update(float)
+    + void : Draw(RenderWindow)
+    + void : Limpiar()
+}
+
+class Particula {
+    - Vector2f pos
+    - Vector2f vel
+    - Color color
+    - float vida
+    - float vidaMax
+    - bool activa
+}
+
+class Menu {
+    - DatosPersonaje personajes[]
+    - PantallaMenu pantalla
+    - int opcionActual
+    - SistemaAudio audio
+    + ResultadoMenu : Ejecutar()
+    + string : GetSpriteJ1()
+    + string : GetSpriteJ2()
+}
+
+class DatosPersonaje {
+    - string nombre
+    - string alias
+    - string archivoSprite
+    - string archivoPerfil
+    - string lore
+    - Color color
+}
+
+class Pausa {
+    - bool activo
+    - int opcion
+    - float tApertura
+    - SistemaAudio audio
+    + void : Abrir()
+    + void : Cerrar()
+    + ResultadoPausa : ProcesarEvento(Event, bool)
+    + void : Update(float)
+    + void : Draw(bool)
+    + bool : EstaActivo()
+}
+
+class Countdown {
+    - float timer
+    - bool termino
+    + void : Iniciar()
+    + bool : Update(float)
+    + void : Draw()
+    + bool : HaTerminado()
+}
+
+
+Juego "1" *-- "2"    Jugador
+Juego "1" *-- "1"    Mapa
+Juego "1" *-- "1"    Camara
+Juego "1" *-- "1"    HUD
+Juego "1" *-- "1"    SistemaAudio
+Juego "1" *-- "1"    SistemaParticulas
+Juego "1" *-- "1"    Menu
+Juego "1" *-- "1"    Pausa
+Juego "1" *-- "1"    Countdown
+
+Jugador "1" *-- "1"  Gancho
+Jugador "1" *-- "1"  Animacion
+Jugador "1" *-- "1"  InputHandler
+
+Jugador "1" o-- "1"  SistemaParticulas
+
+Animacion "1" *-- "1..*" FrameAnim
+
+Mapa "1" *-- "0..*"  Plataforma
+Mapa "1" *-- "0..*"  CajaItem
+
+HUD "1" *-- "2"      Panel
+
+SistemaParticulas "1" *-- "0..*" Particula
+
+Menu "1" *-- "1..*"  DatosPersonaje
+
+Menu "1" o-- "1"     SistemaAudio
+
+Pausa "1" o-- "1"    SistemaAudio
+
+@enduml
