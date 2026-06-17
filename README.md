@@ -2,7 +2,9 @@
 
 Juego de plataformas multijugador de velocidad para 2 jugadores, inspirado en SpeedRunners. Desarrollado en **C++ con SFML y Box2D**, compilado con **MinGW64 (MSYS2)** en Visual Studio Code.
 
-Corre, usa el gancho, deja atrás a tu rival y que no te quede fuera de la pantalla.
+¿Quién es más rápido? Corre, salta y deja atrás a tu rival antes de que la pantalla te deje fuera. Gana altura y usa el gancho para volar sobre las plataformas, pero ten cuidado, las rampas son resbaladizas y los picos no perdonan. Cada jugador tiene 3 vidas, úsalas bien. OVERDRIVE es un juego de plataformas frenético para 2 jugadores en un mapa infinito donde cada segundo cuenta y perder el ritmo significa perder la partida.
+
+
 
 ---
 
